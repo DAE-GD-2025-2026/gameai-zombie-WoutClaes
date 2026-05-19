@@ -11,7 +11,6 @@ AShotgun::AShotgun()
 {
 	ItemType = EItemType::Shotgun;
 	Damage = 2;
-	Value = FMath::RandRange(2, 4);
 }
 
 void AShotgun::UseItem(ASurvivorPawn& Survivor)

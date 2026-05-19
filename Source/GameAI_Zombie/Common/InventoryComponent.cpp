@@ -5,7 +5,6 @@
 
 #include "Items/ItemManager.h"
 #include "Kismet/GameplayStatics.h"
-#include "Perception/AIPerceptionStimuliSourceComponent.h"
 
 
 // Sets default values for this component's properties
@@ -28,12 +27,7 @@ bool UInventoryComponent::GrabItem(int SlotIdx, ABaseItem* Item)
 	{
 		ItemManager->UntrackItem(Item);
 	}
-
-	if (auto ItemStimuliSource = Item->GetComponentByClass<UAIPerceptionStimuliSourceComponent>())
-	{
-		ItemStimuliSource->UnregisterFromSense(UAISense_Sight::StaticClass());
-		ItemStimuliSource->UnregisterFromPerceptionSystem();
-	}
+	
 	Item->SetActorHiddenInGame(true);
 	Item->SetActorEnableCollision(false);
 	Items[SlotIdx] = Item;

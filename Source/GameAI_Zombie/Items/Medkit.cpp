@@ -10,7 +10,6 @@
 AMedkit::AMedkit()
 {
 	ItemType = EItemType::Medkit;
-	Value = FMath::RandRange(1, 5);
 }
 
 void AMedkit::UseItem(ASurvivorPawn& Survivor)

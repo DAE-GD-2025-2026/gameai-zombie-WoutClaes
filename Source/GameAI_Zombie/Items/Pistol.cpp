@@ -9,7 +9,6 @@ APistol::APistol()
 {
 	ItemType = EItemType::Pistol;
 	Damage = 5;
-	Value = FMath::RandRange(4, 10);
 }
 
 void APistol::UseItem(ASurvivorPawn& Survivor)

@@ -10,7 +10,6 @@
 AFood::AFood()
 {
 	ItemType = EItemType::Food;
-	Value = FMath::RandRange(1, 5);
 }
 
 void AFood::UseItem(ASurvivorPawn& Survivor)
