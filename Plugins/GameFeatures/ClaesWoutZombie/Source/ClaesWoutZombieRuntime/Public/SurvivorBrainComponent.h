@@ -174,4 +174,7 @@ private:
 	// ---- Misc ----
 	float LastDeltaTime    { 0.f };
 	float DebugNoInitTimer { 0.f };
+	
+	FVector LastVisitedZone { FVector::ZeroVector };
+	int32 LastSpawnZoneIdx = -1;
 };

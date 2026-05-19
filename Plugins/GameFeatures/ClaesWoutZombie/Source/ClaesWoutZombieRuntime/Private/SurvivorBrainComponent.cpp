@@ -8,10 +8,8 @@
 #include "Common/InventoryComponent.h"
 #include "Items/BaseItem.h"
 #include "Items/ItemType.h"
-#include "Items/Weapon.h"
 #include "Items/ItemSpawnZone.h"
 #include "GameFramework/FloatingPawnMovement.h"
-#include "AIController.h"
 #include "DrawDebugHelpers.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -508,43 +506,37 @@ void USurvivorBrainComponent::PickupNearbyItems()
 
 FVector USurvivorBrainComponent::ComputeAvoidance(FVector const& DesiredDir) const
 {
-	// Cast a fan of rays in front of the pawn.
-	// Rays that hit world geometry contribute a repulsion force perpendicular to the hit.
-	// The result is added to DesiredDir in MoveToward so the pawn smoothly steers around walls.
-
-	FVector Correction = FVector::ZeroVector;
+	FVector Origin = SurvivorPawn->GetActorLocation();
+	FVector Forward = SurvivorPawn->GetActorForwardVector();
 	UWorld* World = GetWorld();
-	if (!World || !SurvivorPawn) return Correction;
 
-	FVector const Origin = SurvivorPawn->GetActorLocation();
+	if (!World) return FVector::ZeroVector;
+
 	FCollisionQueryParams Params;
 	Params.AddIgnoredActor(SurvivorPawn);
 
-	// Angles to probe: centre, left, right, half-left, half-right
-	float const Angles[] = { 0.f, -ProbeAngle, ProbeAngle, -ProbeAngle * 0.5f, ProbeAngle * 0.5f };
-	float const Weights[] = { 1.2f, 1.f, 1.f, 1.1f, 1.1f }; // centre ray matters most
-
-	for (int i = 0; i < 5; ++i)
+	FHitResult CenterHit;
+	
+	if (!World->LineTraceSingleByChannel(CenterHit, Origin, Origin + Forward * ProbeLength, ECC_Visibility, Params))
 	{
-		FVector const ProbeDir = DesiredDir.RotateAngleAxis(Angles[i], FVector::UpVector);
-		FVector const End      = Origin + ProbeDir * ProbeLength;
-
-		FHitResult Hit;
-		if (World->LineTraceSingleByChannel(Hit, Origin, End, ECC_WorldStatic, Params))
-		{
-			// Repulsion: push perpendicular to the hit normal, scaled by closeness
-			float const Closeness = 1.f - (Hit.Distance / ProbeLength); // 0..1, higher = closer wall
-			FVector     Repulse   = FVector::CrossProduct(Hit.Normal, FVector::UpVector).GetSafeNormal();
-
-			// Make sure repulsion pushes away from the wall, not into it
-			if (FVector::DotProduct(Repulse, DesiredDir) < 0.f)
-				Repulse *= -1.f;
-
-			Correction += Repulse * Closeness * Weights[i] * SteerStrength;
-		}
+		return FVector::ZeroVector; 
 	}
 
-	return Correction;
+	float Angles[] = { 30.f, -30.f, 60.f, -60.f, 90.f, -90.f };
+
+	for (float Angle : Angles)
+	{
+		FVector RayDir = Forward.RotateAngleAxis(Angle, FVector::UpVector);
+		FHitResult Hit;
+
+		if (!World->LineTraceSingleByChannel(Hit, Origin, Origin + RayDir * ProbeLength, ECC_Visibility, Params))
+		{
+			DrawDebugLine(World, Origin, Origin + RayDir * ProbeLength, FColor::Green, false, -1.f, 0, 2.f);
+			
+			return RayDir * SteerStrength * 2.0f; 
+		}
+	}
+	return CenterHit.ImpactNormal * SteerStrength;
 }
 
 void USurvivorBrainComponent::MoveToward(FVector const& Target, bool bRun)
@@ -556,34 +548,23 @@ void USurvivorBrainComponent::MoveToward(FVector const& Target, bool bRun)
 	FVector Delta = Target - MyLoc;
 	Delta.Z = 0.f;
 
-	float const DistSq = Delta.SizeSquared();
-	// Only stop movement for wander targets, NOT for item pickups (SeekItem handles its own stop)
-	if (DistSq < ReachedTargetRadius * ReachedTargetRadius)
-		return;
+	if (Delta.SizeSquared() < ReachedTargetRadius * ReachedTargetRadius) return;
 
-	FVector const DesiredDir = Delta.GetSafeNormal();
+	FVector SeekDirection = Delta.GetSafeNormal();
+	FVector AvoidanceForce = ComputeAvoidance(SeekDirection);
 
-	// Compute avoidance correction.
-	// Key: we accumulate the steered direction across frames (SteerDir) so a single wall
-	// can persistently redirect the pawn rather than being overridden each tick.
-	FVector const Avoidance = ComputeAvoidance(DesiredDir);
-	if (!Avoidance.IsNearlyZero())
-	{
-		// Wall detected: blend steered dir toward avoidance direction and lock it in
-		SteerDir = FMath::VInterpTo(SteerDir, (DesiredDir + Avoidance).GetSafeNormal(), LastDeltaTime, 4.f);
-	}
-	else
-	{
-		// Path clear: gradually return steered dir back to the desired direction
-		SteerDir = FMath::VInterpTo(SteerDir, DesiredDir, LastDeltaTime, 2.f);
-	}
+	FVector DesiredFinalDir = (SeekDirection + AvoidanceForce).GetSafeNormal();
+	if (DesiredFinalDir.IsNearlyZero()) DesiredFinalDir = SurvivorPawn->GetActorForwardVector();
+
+	SteerDir = FMath::VInterpTo(SteerDir, DesiredFinalDir, LastDeltaTime, TurnInterpSpeed);
 	SteerDir.Z = 0.f;
-	SteerDir = SteerDir.GetSafeNormal();
+	
+	FVector FinalInput = SteerDir.GetSafeNormal();
 
-	SurvivorPawn->AddMovementInput(SteerDir, 1.0f);
+	SurvivorPawn->AddMovementInput(FinalInput, 1.0f);
 
-	FRotator const NewRot = FMath::RInterpTo(
-		SurvivorPawn->GetActorRotation(), SteerDir.Rotation(), LastDeltaTime, TurnInterpSpeed);
+	FRotator const TargetRot = FinalInput.Rotation();
+	FRotator const NewRot = FMath::RInterpTo(SurvivorPawn->GetActorRotation(), TargetRot, LastDeltaTime, TurnInterpSpeed * 1.5f);
 	SurvivorPawn->SetActorRotation(NewRot);
 }
 
@@ -610,23 +591,34 @@ void USurvivorBrainComponent::PickNewWanderTarget()
 {
 	FVector const MyLoc = SurvivorPawn->GetActorLocation();
 
-	// Prefer moving toward a spawn zone (houses) so the pawn naturally finds items.
-	// Pick the nearest zone we haven't recently visited, with a small random offset.
 	if (SpawnZoneLocations.Num() > 0)
 	{
-		// Build a weighted list: nearer zones are preferred but not exclusively chosen
-		int BestIdx = FMath::RandRange(0, SpawnZoneLocations.Num() - 1);
+		int32 BestIdx = -1;
 		float BestScore = TNumericLimits<float>::Max();
 
 		for (int i = 0; i < SpawnZoneLocations.Num(); ++i)
 		{
+			if (SpawnZoneLocations.Num() > 1 && i == LastSpawnZoneIdx)
+			{
+				continue;
+			}
+
 			float const Dist  = FVector::Dist(MyLoc, SpawnZoneLocations[i]);
-			// Bias toward zones that are not too close (already visited) and not too far
 			float const Score = FMath::Abs(Dist - WanderRadius) + FMath::FRandRange(0.f, WanderRadius * 0.4f);
-			if (Score < BestScore) { BestScore = Score; BestIdx = i; }
+			if (Score < BestScore) 
+			{ 
+				BestScore = Score; 
+				BestIdx = i; 
+			}
 		}
 
-		// Add a small random offset so the pawn doesn't always go to the exact same point
+		if (BestIdx == -1)
+		{
+			BestIdx = FMath::RandRange(0, SpawnZoneLocations.Num() - 1);
+		}
+
+		LastSpawnZoneIdx = BestIdx;
+
 		FVector const Jitter = FVector(FMath::FRandRange(-150.f, 150.f), FMath::FRandRange(-150.f, 150.f), 0.f);
 		Blackboard->WanderTarget       = SpawnZoneLocations[BestIdx] + Jitter;
 		Blackboard->bWanderTargetValid = true;
@@ -634,13 +626,14 @@ void USurvivorBrainComponent::PickNewWanderTarget()
 		StuckTimer                     = 0.f;
 		return;
 	}
-
-	// Fallback: random direction if no zones found
-	FVector RandDir = FMath::VRand(); RandDir.Z = 0.f; RandDir.Normalize();
-	Blackboard->WanderTarget       = MyLoc + RandDir * WanderRadius;
-	Blackboard->bWanderTargetValid = true;
-	LastDistToWanderTarget         = WanderRadius;
-	StuckTimer                     = 0.f;
+	else
+	{
+		// Fallback random wander
+		FVector RandomDir = FMath::VRand();
+		RandomDir.Z = 0.f;
+		Blackboard->WanderTarget = SurvivorPawn->GetActorLocation() + RandomDir * 1000.f;
+		Blackboard->bWanderTargetValid = true;
+	}
 }
 
 ABaseItem* USurvivorBrainComponent::SelectBestItem() const
