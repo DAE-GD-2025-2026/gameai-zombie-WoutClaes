@@ -9,55 +9,42 @@
 #include "Items/BaseItem.h"
 #include "Items/ItemType.h"
 #include "Items/Weapon.h"
+#include "Items/ItemSpawnZone.h"
 #include "GameFramework/FloatingPawnMovement.h"
 #include "AIController.h"
 #include "DrawDebugHelpers.h"
+#include "Kismet/GameplayStatics.h"
 
 
 USurvivorBrainComponent::USurvivorBrainComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
-	UE_LOG(LogTemp, Log, TEXT("[Brain] Constructor called."));
 }
 
 void USurvivorBrainComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	UE_LOG(LogTemp, Warning, TEXT("[Brain] BeginPlay START. Owner: %s"),
-		GetOwner() ? *GetOwner()->GetName() : TEXT("NULL"));
-
 	AIController = Cast<ASurvivorAIController>(GetOwner());
 	if (!AIController)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[Brain] FAIL: Owner is not ASurvivorAIController. Tick disabled."));
+		UE_LOG(LogTemp, Error, TEXT("[Brain] Owner is not ASurvivorAIController. Tick disabled."));
 		SetComponentTickEnabled(false);
 		return;
 	}
-	UE_LOG(LogTemp, Warning, TEXT("[Brain] OK: AIController found."));
 
 	SurvivorPawn = Cast<ASurvivorPawn>(AIController->GetPawn());
 	if (!SurvivorPawn)
-	{
 		UE_LOG(LogTemp, Warning, TEXT("[Brain] Pawn not possessed yet at BeginPlay - will retry in Tick."));
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[Brain] OK: SurvivorPawn found: %s"), *SurvivorPawn->GetName());
 
-		// Verify FloatingPawnMovement
-		if (SurvivorPawn->GetComponentByClass<UFloatingPawnMovement>())
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[Brain] OK: FloatingPawnMovement found on pawn."));
-		}
-		else
-		{
-			UE_LOG(LogTemp, Error, TEXT("[Brain] FAIL: No FloatingPawnMovement on pawn! Movement will not work."));
-		}
-	}
+	// Cache all item spawn zone locations — used for directed wandering so the pawn
+	// walks toward houses (where items are) instead of random open-world points.
+	TArray<AActor*> Found;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AItemSpawnZone::StaticClass(), Found);
+	for (AActor* A : Found)
+		SpawnZoneLocations.Add(A->GetActorLocation());
 
-	UE_LOG(LogTemp, Warning, TEXT("[Brain] BeginPlay END. Tick enabled: %s"),
-		IsComponentTickEnabled() ? TEXT("YES") : TEXT("NO"));
+	UE_LOG(LogTemp, Warning, TEXT("[Brain] Found %d spawn zones."), SpawnZoneLocations.Num());
 }
 
 // ---------------------------------------------------------------------------
@@ -69,46 +56,32 @@ void USurvivorBrainComponent::TickComponent(float DeltaTime, ELevelTick TickType
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	// --- Guard: retry pawn if not possessed yet ---
-	if (!SurvivorPawn)
-	{
-		if (AIController)
-		{
-			SurvivorPawn = Cast<ASurvivorPawn>(AIController->GetPawn());
-			if (SurvivorPawn)
-				UE_LOG(LogTemp, Warning, TEXT("[Brain] Pawn acquired in Tick: %s"), *SurvivorPawn->GetName());
-		}
-	}
+	if (!SurvivorPawn && AIController)
+		SurvivorPawn = Cast<ASurvivorPawn>(AIController->GetPawn());
 
 	if (!AIController || !SurvivorPawn || !Blackboard)
 	{
-		// Print once per second so we don't spam
 		DebugNoInitTimer += DeltaTime;
-		if (DebugNoInitTimer >= 1.0f)
+		if (DebugNoInitTimer >= 1.f)
 		{
 			DebugNoInitTimer = 0.f;
-			UE_LOG(LogTemp, Error, TEXT("[Brain] NOT READY - AIController:%s SurvivorPawn:%s Blackboard:%s"),
-				AIController  ? TEXT("OK") : TEXT("NULL"),
-				SurvivorPawn  ? TEXT("OK") : TEXT("NULL"),
-				Blackboard    ? TEXT("OK") : TEXT("NULL"));
-
-			if (GEngine)
-				GEngine->AddOnScreenDebugMessage(1, 1.f, FColor::Red,
-					FString::Printf(TEXT("[Brain] NOT READY - Ctrl:%s Pawn:%s BB:%s"),
-						AIController ? TEXT("OK") : TEXT("NULL"),
-						SurvivorPawn ? TEXT("OK") : TEXT("NULL"),
-						Blackboard   ? TEXT("OK") : TEXT("NULL")));
+			if (GEngine) GEngine->AddOnScreenDebugMessage(1, 1.f, FColor::Red,
+				FString::Printf(TEXT("[Brain] NOT READY  Ctrl:%s  Pawn:%s  BB:%s"),
+					AIController ? TEXT("OK") : TEXT("NULL"),
+					SurvivorPawn ? TEXT("OK") : TEXT("NULL"),
+					Blackboard   ? TEXT("OK") : TEXT("NULL")));
 		}
 		return;
 	}
 
-	// --- Normal tick ---
-	LastDeltaTime = DeltaTime; // stored for use in MoveToward
+	LastDeltaTime = DeltaTime;
+
 	RefreshSelfState();
 	Blackboard->ClearStaleEntries();
 	RefreshNearestZombie();
 	RefreshClosestItems();
 	PickupNearbyItems();
+	TickFleeTimer(DeltaTime);
 
 	ESurvivorState const Desired = EvaluateTransitions();
 	if (Desired != CurrentState)
@@ -124,83 +97,6 @@ void USurvivorBrainComponent::TickComponent(float DeltaTime, ELevelTick TickType
 	}
 
 	DrawDebugInfo();
-}
-
-// ---------------------------------------------------------------------------
-// Debug HUD + visuals
-// ---------------------------------------------------------------------------
-
-void USurvivorBrainComponent::DrawDebugInfo()
-{
-	if (!GEngine || !SurvivorPawn) return;
-
-	FVector const MyLoc = SurvivorPawn->GetActorLocation();
-	UWorld* World = GetWorld();
-
-	// Line 1: State + vitals
-	GEngine->AddOnScreenDebugMessage(1, 0.f, FColor::Cyan,
-		FString::Printf(TEXT("State: %s | HP: %.0f%% | Stamina: %.0f%%"),
-			*SurvivorStateToString(CurrentState),
-			Blackboard->HealthRatio  * 100.f,
-			Blackboard->StaminaRatio * 100.f));
-
-	// Line 2: Perceived counts
-	GEngine->AddOnScreenDebugMessage(2, 0.f, FColor::Yellow,
-		FString::Printf(TEXT("Known: Zombies=%d  Items=%d  Purge=%d | HasWeapon=%s"),
-			Blackboard->KnownZombies.Num(),
-			Blackboard->KnownItems.Num(),
-			Blackboard->KnownPurgeZones.Num(),
-			Blackboard->bHasWeapon ? TEXT("YES") : TEXT("NO")));
-
-	// Line 3: Movement info
-	FVector Vel = FVector::ZeroVector;
-	if (auto* FPM = SurvivorPawn->GetComponentByClass<UFloatingPawnMovement>())
-		Vel = FPM->Velocity;
-
-	GEngine->AddOnScreenDebugMessage(3, 0.f, FColor::Green,
-		FString::Printf(TEXT("Velocity: X=%.1f Y=%.1f Z=%.1f (speed=%.1f)"),
-			Vel.X, Vel.Y, Vel.Z, Vel.Size()));
-
-	// Line 4: Current wander/seek target
-	if (CurrentState == ESurvivorState::Explore && Blackboard->bWanderTargetValid)
-	{
-		GEngine->AddOnScreenDebugMessage(4, 0.f, FColor::White,
-			FString::Printf(TEXT("WanderTarget: X=%.0f Y=%.0f (dist=%.0f)"),
-				Blackboard->WanderTarget.X, Blackboard->WanderTarget.Y,
-				FVector::Dist(MyLoc, Blackboard->WanderTarget)));
-
-		// Draw line to wander target
-		DrawDebugLine(World, MyLoc, Blackboard->WanderTarget, FColor::White, false, -1.f, 0, 3.f);
-		DrawDebugSphere(World, Blackboard->WanderTarget, 50.f, 8, FColor::White, false, -1.f);
-	}
-
-	if (CurrentState == ESurvivorState::SeekItem && IsValid(SeekTarget))
-	{
-		GEngine->AddOnScreenDebugMessage(4, 0.f, FColor::Orange,
-			FString::Printf(TEXT("SeekTarget: %s (dist=%.0f)"),
-				*SeekTarget->GetName(),
-				FVector::Dist(MyLoc, SeekTarget->GetActorLocation())));
-
-		DrawDebugLine(World, MyLoc, SeekTarget->GetActorLocation(), FColor::Orange, false, -1.f, 0, 3.f);
-	}
-
-	// Line 5: Nearest zombie
-	if (Blackboard->NearestZombieDistance < 1e6f)
-	{
-		GEngine->AddOnScreenDebugMessage(5, 0.f, FColor::Red,
-			FString::Printf(TEXT("Nearest zombie: %.0f units"), Blackboard->NearestZombieDistance));
-
-		FVector const ZombiePos = MyLoc + Blackboard->NearestZombieDirection * Blackboard->NearestZombieDistance;
-		DrawDebugLine(World, MyLoc, ZombiePos, FColor::Red, false, -1.f, 0, 2.f);
-	}
-
-	// Draw pawn's sight radius
-	DrawDebugCone(World, MyLoc,
-		SurvivorPawn->GetActorForwardVector(),
-		1000.f,                     // sight radius from SurvivorPawn constructor
-		FMath::DegreesToRadians(70.f),
-		FMath::DegreesToRadians(0.f),
-		12, FColor::Cyan, false, -1.f, 0, 1.f);
 }
 
 // ---------------------------------------------------------------------------
@@ -221,50 +117,89 @@ void USurvivorBrainComponent::TransitionTo(ESurvivorState NewState)
 		StopMovement();
 		MedkitUseTimer = 0.f;
 		break;
+
 	case ESurvivorState::Flee:
+		// Lock flee in for a minimum duration so the pawn doesn't jitter
+		FleeLockedTimer = FleeMinDuration;
 		FleeTimeWithoutThreat = 0.f;
+		// Pick an escape direction immediately on entry
+		UpdateFleeTarget();
 		break;
+
 	case ESurvivorState::SeekItem:
 		SeekTarget = SelectBestItem();
 		UE_LOG(LogTemp, Log, TEXT("[Brain] SeekItem target: %s"),
 			SeekTarget ? *SeekTarget->GetName() : TEXT("NONE"));
 		break;
+
+	case ESurvivorState::Explore:
+		// Invalidate wander target so we pick a fresh zone-directed one
+		Blackboard->bWanderTargetValid = false;
+		StuckTimer = 0.f;
+		LastDistToWanderTarget = TNumericLimits<float>::Max();
+		break;
+
 	default:
 		break;
 	}
 }
 
+void USurvivorBrainComponent::TickFleeTimer(float DeltaTime)
+{
+	if (FleeLockedTimer > 0.f)
+		FleeLockedTimer -= DeltaTime;
+}
+
 ESurvivorState USurvivorBrainComponent::EvaluateTransitions() const
 {
-	if (Blackboard->HealthRatio < LowHealthThreshold && Blackboard->MedkitSlotIdx >= 0)
+	const float ZombieDist = Blackboard->NearestZombieDistance;
+	const bool  bHasWeapon = Blackboard->bHasWeapon;
+	const float Health     = Blackboard->HealthRatio;
+	const bool  bHealthOk  = Health >= SafeHealthThreshold;
+
+	// --- Priority 1: use medkit ---
+	if (Health < LowHealthThreshold && Blackboard->MedkitSlotIdx >= 0)
 		return ESurvivorState::UseMedkit;
 
-	const bool bZombieTooClose = Blackboard->NearestZombieDistance < FleeRadius;
-	const bool bZombieNearby   = Blackboard->NearestZombieDistance < FightRadius;
-
-	if (bZombieTooClose)
-	{
-		if (Blackboard->HealthRatio < SafeHealthThreshold || !Blackboard->bHasWeapon)
-			return ESurvivorState::Flee;
-		return ESurvivorState::Fight;
-	}
-
-	if (bZombieNearby && Blackboard->bHasWeapon && Blackboard->HealthRatio >= SafeHealthThreshold)
-		return ESurvivorState::Fight;
-
+	// Stay in UseMedkit until that state self-transitions
 	if (CurrentState == ESurvivorState::UseMedkit)
 		return ESurvivorState::UseMedkit;
 
-	if (CurrentState == ESurvivorState::Flee)
+	// --- Priority 2: flee lock-in (prevents per-frame jitter) ---
+	// Once we enter Flee we stay in it until FleeLockedTimer expires,
+	// even if the zombie briefly leaves the radius.
+	if (CurrentState == ESurvivorState::Flee && FleeLockedTimer > 0.f)
+		return ESurvivorState::Flee;
+
+	// --- Priority 3: zombie threat ---
+	const bool bZombieDangerous = ZombieDist < DangerRadius;
+	const bool bZombieClose     = ZombieDist < FleeRadius;
+	const bool bZombieInRange   = ZombieDist < FightRadius;
+
+	if (bZombieDangerous || bZombieClose)
 	{
-		if (Blackboard->KnownZombies.IsEmpty())
-			return PreviousState == ESurvivorState::Flee ? ESurvivorState::Explore : PreviousState;
+		if (bHasWeapon && bHealthOk)
+			return ESurvivorState::Fight;
 		return ESurvivorState::Flee;
 	}
 
+	if (bZombieInRange && bHasWeapon && bHealthOk)
+		return ESurvivorState::Fight;
+
+	// Flee: stay until threat is gone
+	if (CurrentState == ESurvivorState::Flee)
+	{
+		if (!Blackboard->KnownZombies.IsEmpty() && bZombieClose)
+			return ESurvivorState::Flee;
+		// Threat cleared — go seek items or explore
+		return SelectBestItem() ? ESurvivorState::SeekItem : ESurvivorState::Explore;
+	}
+
+	// --- Priority 4: seek a known item ---
 	if (SelectBestItem() != nullptr)
 		return ESurvivorState::SeekItem;
 
+	// --- Default ---
 	return ESurvivorState::Explore;
 }
 
@@ -276,12 +211,30 @@ void USurvivorBrainComponent::TickExplore(float DeltaTime)
 {
 	FVector const MyLoc = SurvivorPawn->GetActorLocation();
 
+	// Pick a new target if we don't have one or have reached it
 	if (!Blackboard->bWanderTargetValid ||
 		FVector::Dist(MyLoc, Blackboard->WanderTarget) < ReachedTargetRadius)
 	{
 		PickNewWanderTarget();
-		UE_LOG(LogTemp, Log, TEXT("[Brain] New wander target: X=%.0f Y=%.0f"),
-			Blackboard->WanderTarget.X, Blackboard->WanderTarget.Y);
+	}
+
+	// Stuck detection: if we haven't closed distance in StuckTimeout seconds, pick a new target
+	float const DistNow = FVector::Dist(MyLoc, Blackboard->WanderTarget);
+	if (DistNow < LastDistToWanderTarget - 10.f)
+	{
+		// Making progress
+		LastDistToWanderTarget = DistNow;
+		StuckTimer = 0.f;
+	}
+	else
+	{
+		StuckTimer += DeltaTime;
+		if (StuckTimer >= StuckTimeout)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[Brain] Stuck detected — picking new wander target"));
+			PickNewWanderTarget();
+			StuckTimer = 0.f;
+		}
 	}
 
 	SurvivorPawn->StopRunning();
@@ -290,6 +243,7 @@ void USurvivorBrainComponent::TickExplore(float DeltaTime)
 
 void USurvivorBrainComponent::TickSeekItem(float DeltaTime)
 {
+	// Re-validate target every tick
 	if (!IsValid(SeekTarget) || SeekTarget->GetValue() <= 0)
 	{
 		SeekTarget = SelectBestItem();
@@ -306,15 +260,16 @@ void USurvivorBrainComponent::TickSeekItem(float DeltaTime)
 
 	if (Dist <= ItemPickupRadius)
 	{
+		StopMovement();
 		auto* Inventory = SurvivorPawn->GetComponentByClass<UInventoryComponent>();
 		if (Inventory)
 		{
 			for (int i = 0; i < Inventory->GetInventoryCapacity(); ++i)
 			{
-				if (Inventory->GetInventory()[i] == nullptr)
+				if (!Inventory->GetInventory()[i])
 				{
-					bool bGrabbed = Inventory->GrabItem(i, SeekTarget);
-					UE_LOG(LogTemp, Log, TEXT("[Brain] GrabItem slot %d: %s"), i, bGrabbed ? TEXT("OK") : TEXT("FAIL"));
+					Inventory->GrabItem(i, SeekTarget);
+					UE_LOG(LogTemp, Warning, TEXT("[Brain] Grabbed item into slot %d"), i);
 					break;
 				}
 			}
@@ -324,8 +279,13 @@ void USurvivorBrainComponent::TickSeekItem(float DeltaTime)
 		return;
 	}
 
+	// Drive all the way to ItemPickupRadius -- temporarily shrink ReachedTargetRadius
+	// so MoveToward doesn't stop short of the item
+	float const SavedReached = ReachedTargetRadius;
+	const_cast<USurvivorBrainComponent*>(this)->ReachedTargetRadius = ItemPickupRadius * 0.8f;
 	bool const bUrgent = Blackboard->NearestZombieDistance < FightRadius * 1.5f;
 	MoveToward(ItemLoc, bUrgent);
+	const_cast<USurvivorBrainComponent*>(this)->ReachedTargetRadius = SavedReached;
 }
 
 void USurvivorBrainComponent::TickFight(float DeltaTime)
@@ -337,30 +297,24 @@ void USurvivorBrainComponent::TickFight(float DeltaTime)
 	}
 
 	APawn* Target = nullptr;
-	float BestDist = TNumericLimits<float>::Max();
+	float  Best   = TNumericLimits<float>::Max();
 	FVector const MyLoc = SurvivorPawn->GetActorLocation();
 
-	for (auto const& Weak : Blackboard->KnownZombies)
+	for (auto const& W : Blackboard->KnownZombies)
 	{
-		if (!Weak.IsValid()) continue;
-		float const D = FVector::Dist(MyLoc, Weak->GetActorLocation());
-		if (D < BestDist) { BestDist = D; Target = Weak.Get(); }
+		if (!W.IsValid()) continue;
+		float D = FVector::Dist(MyLoc, W->GetActorLocation());
+		if (D < Best) { Best = D; Target = W.Get(); }
 	}
 
-	if (!Target)
-	{
-		TransitionTo(ESurvivorState::Explore);
-		return;
-	}
+	if (!Target) { TransitionTo(ESurvivorState::Explore); return; }
 
 	FVector const ToTarget = (Target->GetActorLocation() - MyLoc).GetSafeNormal();
 	SurvivorPawn->SetActorRotation(FMath::RInterpTo(
-		SurvivorPawn->GetActorRotation(), ToTarget.Rotation(), DeltaTime, 8.f));
+		SurvivorPawn->GetActorRotation(), ToTarget.Rotation(), DeltaTime, TurnInterpSpeed));
 
-	if (BestDist > ShootRadius)
-	{
+	if (Best > ShootRadius)
 		MoveToward(Target->GetActorLocation(), false);
-	}
 	else
 	{
 		StopMovement();
@@ -370,39 +324,46 @@ void USurvivorBrainComponent::TickFight(float DeltaTime)
 
 void USurvivorBrainComponent::TickFlee(float DeltaTime)
 {
-	if (Blackboard->KnownZombies.IsEmpty())
+	// Recalculate flee direction on a timer, but always project the target
+	// ahead of the pawn's CURRENT position so it never "arrives" and stops.
+	FleeTargetRefreshTimer -= DeltaTime;
+	if (FleeTargetRefreshTimer <= 0.f)
 	{
-		FleeTimeWithoutThreat += DeltaTime;
-		if (FleeTimeWithoutThreat >= FleeTimeoutDuration)
-		{
-			TransitionTo(ESurvivorState::Explore);
-			return;
-		}
-	}
-	else
-	{
-		FleeTimeWithoutThreat = 0.f;
+		UpdateFleeTarget();
+		FleeTargetRefreshTimer = FleeTargetRefreshInterval;
 	}
 
+	// Re-project ahead of current position every frame
 	FVector const MyLoc = SurvivorPawn->GetActorLocation();
-	FVector FleeDir     = -Blackboard->NearestZombieDirection;
-
-	for (auto const& Weak : Blackboard->KnownPurgeZones)
-	{
-		if (!Weak.IsValid()) continue;
-		FVector const ToPurge = Weak->GetActorLocation() - MyLoc;
-		float   const Dist    = ToPurge.Size();
-		if (Dist < 600.f && Dist > 1.f)
-			FleeDir -= ToPurge.GetSafeNormal() * (600.f - Dist) / 600.f;
-	}
-
-	if (FleeDir.IsNearlyZero())
-		FleeDir = SurvivorPawn->GetActorForwardVector() * -1.f;
-	FleeDir.Z = 0.f;
-	FleeDir.Normalize();
+	CurrentFleeTarget = MyLoc + FleeDirection * FleeDistance;
 
 	bool const bShouldRun = Blackboard->StaminaRatio > LowStaminaThreshold;
-	MoveToward(MyLoc + FleeDir * 800.f, bShouldRun);
+	MoveToward(CurrentFleeTarget, bShouldRun);
+}
+
+void USurvivorBrainComponent::UpdateFleeTarget()
+{
+	FVector const MyLoc = SurvivorPawn->GetActorLocation();
+	FVector Dir = -Blackboard->NearestZombieDirection;
+
+	// Steer away from purge zones too
+	for (auto const& W : Blackboard->KnownPurgeZones)
+	{
+		if (!W.IsValid()) continue;
+		FVector const ToPurge = W->GetActorLocation() - MyLoc;
+		float   const Dist    = ToPurge.Size();
+		if (Dist < 600.f && Dist > 1.f)
+			Dir -= ToPurge.GetSafeNormal() * (600.f - Dist) / 600.f;
+	}
+
+	if (Dir.IsNearlyZero())
+		Dir = SurvivorPawn->GetActorForwardVector() * -1.f;
+	Dir.Z = 0.f;
+	Dir.Normalize();
+
+	// Store direction separately — TickFlee projects ahead from current pos each frame
+	FleeDirection = Dir;
+	CurrentFleeTarget = MyLoc + FleeDirection * FleeDistance;
 }
 
 void USurvivorBrainComponent::TickUseMedkit(float DeltaTime)
@@ -413,8 +374,7 @@ void USurvivorBrainComponent::TickUseMedkit(float DeltaTime)
 	auto* Inventory = SurvivorPawn->GetComponentByClass<UInventoryComponent>();
 	if (Inventory && Blackboard->MedkitSlotIdx >= 0)
 	{
-		bool bUsed = Inventory->UseItem(Blackboard->MedkitSlotIdx);
-		UE_LOG(LogTemp, Log, TEXT("[Brain] UseItem(medkit slot %d): %s"), Blackboard->MedkitSlotIdx, bUsed ? TEXT("OK") : TEXT("FAIL"));
+		Inventory->UseItem(Blackboard->MedkitSlotIdx);
 		auto const& Inv = Inventory->GetInventory();
 		if (Inv[Blackboard->MedkitSlotIdx] && Inv[Blackboard->MedkitSlotIdx]->GetValue() <= 0)
 			Inventory->RemoveItem(Blackboard->MedkitSlotIdx);
@@ -440,7 +400,6 @@ void USurvivorBrainComponent::RefreshSelfState()
 
 	if (Health)
 		Blackboard->HealthRatio = (float)Health->GetHealth() / (float)Health->GetMaxHealth();
-
 	if (Stamina)
 		Blackboard->StaminaRatio = Stamina->GetCurrentStamina() / Stamina->GetMaxStamina();
 
@@ -460,14 +419,11 @@ void USurvivorBrainComponent::RefreshSelfState()
 			{
 			case EItemType::Pistol:
 			case EItemType::Shotgun:
-				if (Blackboard->WeaponSlotIdx < 0) { Blackboard->bHasWeapon = true; Blackboard->WeaponSlotIdx = i; }
-				break;
+				if (Blackboard->WeaponSlotIdx < 0) { Blackboard->bHasWeapon = true; Blackboard->WeaponSlotIdx = i; } break;
 			case EItemType::Medkit:
-				if (Blackboard->MedkitSlotIdx < 0) Blackboard->MedkitSlotIdx = i;
-				break;
+				if (Blackboard->MedkitSlotIdx < 0) Blackboard->MedkitSlotIdx = i; break;
 			case EItemType::Food:
-				if (Blackboard->FoodSlotIdx < 0) Blackboard->FoodSlotIdx = i;
-				break;
+				if (Blackboard->FoodSlotIdx < 0) Blackboard->FoodSlotIdx = i; break;
 			default: break;
 			}
 		}
@@ -480,10 +436,10 @@ void USurvivorBrainComponent::RefreshNearestZombie()
 	Blackboard->NearestZombieDistance  = TNumericLimits<float>::Max();
 	Blackboard->NearestZombieDirection = FVector::ZeroVector;
 
-	for (auto const& Weak : Blackboard->KnownZombies)
+	for (auto const& W : Blackboard->KnownZombies)
 	{
-		if (!Weak.IsValid()) continue;
-		FVector const Delta = Weak->GetActorLocation() - MyLoc;
+		if (!W.IsValid()) continue;
+		FVector const Delta = W->GetActorLocation() - MyLoc;
 		float   const Dist  = Delta.Size();
 		if (Dist < Blackboard->NearestZombieDistance)
 		{
@@ -503,19 +459,19 @@ void USurvivorBrainComponent::RefreshClosestItems()
 	float BestFood   = TNumericLimits<float>::Max();
 	float BestWeapon = TNumericLimits<float>::Max();
 
-	for (auto const& Weak : Blackboard->KnownItems)
+	for (auto const& W : Blackboard->KnownItems)
 	{
-		if (!Weak.IsValid() || Weak->GetValue() <= 0) continue;
-		float const D = FVector::Dist(MyLoc, Weak->GetActorLocation());
-		switch (Weak->GetItemType())
+		if (!W.IsValid() || W->GetValue() <= 0) continue;
+		float const D = FVector::Dist(MyLoc, W->GetActorLocation());
+		switch (W->GetItemType())
 		{
 		case EItemType::Medkit:
-			if (D < BestMedkit) { BestMedkit = D; Blackboard->ClosestMedkit = Weak; } break;
+			if (D < BestMedkit) { BestMedkit = D; Blackboard->ClosestMedkit = W; } break;
 		case EItemType::Food:
-			if (D < BestFood)   { BestFood = D;   Blackboard->ClosestFood   = Weak; } break;
+			if (D < BestFood)   { BestFood   = D; Blackboard->ClosestFood   = W; } break;
 		case EItemType::Pistol:
 		case EItemType::Shotgun:
-			if (D < BestWeapon) { BestWeapon = D; Blackboard->ClosestWeapon = Weak; } break;
+			if (D < BestWeapon) { BestWeapon = D; Blackboard->ClosestWeapon = W; } break;
 		default: break;
 		}
 	}
@@ -533,12 +489,12 @@ void USurvivorBrainComponent::PickupNearbyItems()
 		if (!InvItems[i]) { FreeSlot = i; break; }
 	if (FreeSlot < 0) return;
 
-	for (auto const& Weak : Blackboard->KnownItems)
+	for (auto const& W : Blackboard->KnownItems)
 	{
-		if (!Weak.IsValid() || Weak->GetValue() <= 0) continue;
-		if (FVector::Dist(MyLoc, Weak->GetActorLocation()) <= ItemPickupRadius)
+		if (!W.IsValid() || W->GetValue() <= 0) continue;
+		if (FVector::Dist(MyLoc, W->GetActorLocation()) <= ItemPickupRadius)
 		{
-			if (Inventory->GrabItem(FreeSlot, Weak.Get()))
+			if (Inventory->GrabItem(FreeSlot, W.Get()))
 			{
 				FreeSlot = -1;
 				auto const& R = Inventory->GetInventory();
@@ -550,27 +506,84 @@ void USurvivorBrainComponent::PickupNearbyItems()
 	}
 }
 
+FVector USurvivorBrainComponent::ComputeAvoidance(FVector const& DesiredDir) const
+{
+	// Cast a fan of rays in front of the pawn.
+	// Rays that hit world geometry contribute a repulsion force perpendicular to the hit.
+	// The result is added to DesiredDir in MoveToward so the pawn smoothly steers around walls.
+
+	FVector Correction = FVector::ZeroVector;
+	UWorld* World = GetWorld();
+	if (!World || !SurvivorPawn) return Correction;
+
+	FVector const Origin = SurvivorPawn->GetActorLocation();
+	FCollisionQueryParams Params;
+	Params.AddIgnoredActor(SurvivorPawn);
+
+	// Angles to probe: centre, left, right, half-left, half-right
+	float const Angles[] = { 0.f, -ProbeAngle, ProbeAngle, -ProbeAngle * 0.5f, ProbeAngle * 0.5f };
+	float const Weights[] = { 1.2f, 1.f, 1.f, 1.1f, 1.1f }; // centre ray matters most
+
+	for (int i = 0; i < 5; ++i)
+	{
+		FVector const ProbeDir = DesiredDir.RotateAngleAxis(Angles[i], FVector::UpVector);
+		FVector const End      = Origin + ProbeDir * ProbeLength;
+
+		FHitResult Hit;
+		if (World->LineTraceSingleByChannel(Hit, Origin, End, ECC_WorldStatic, Params))
+		{
+			// Repulsion: push perpendicular to the hit normal, scaled by closeness
+			float const Closeness = 1.f - (Hit.Distance / ProbeLength); // 0..1, higher = closer wall
+			FVector     Repulse   = FVector::CrossProduct(Hit.Normal, FVector::UpVector).GetSafeNormal();
+
+			// Make sure repulsion pushes away from the wall, not into it
+			if (FVector::DotProduct(Repulse, DesiredDir) < 0.f)
+				Repulse *= -1.f;
+
+			Correction += Repulse * Closeness * Weights[i] * SteerStrength;
+		}
+	}
+
+	return Correction;
+}
+
 void USurvivorBrainComponent::MoveToward(FVector const& Target, bool bRun)
 {
 	if (bRun) SurvivorPawn->StartRunning();
 	else      SurvivorPawn->StopRunning();
 
 	FVector const MyLoc = SurvivorPawn->GetActorLocation();
-	FVector const Delta = Target - MyLoc;
+	FVector Delta = Target - MyLoc;
+	Delta.Z = 0.f;
 
-	if (Delta.SizeSquared() < ReachedTargetRadius * ReachedTargetRadius)
+	float const DistSq = Delta.SizeSquared();
+	// Only stop movement for wander targets, NOT for item pickups (SeekItem handles its own stop)
+	if (DistSq < ReachedTargetRadius * ReachedTargetRadius)
 		return;
 
-	// FloatingPawnMovement is driven by AddMovementInput
-	FVector Dir = Delta;
-	Dir.Z = 0.f;
-	Dir.Normalize();
-	SurvivorPawn->AddMovementInput(Dir, 1.0f);
+	FVector const DesiredDir = Delta.GetSafeNormal();
 
-	// FloatingPawnMovement does not auto-rotate toward movement — do it manually
-	FRotator const TargetRot = Dir.Rotation();
-	FRotator const NewRot    = FMath::RInterpTo(
-		SurvivorPawn->GetActorRotation(), TargetRot, LastDeltaTime, TurnInterpSpeed);
+	// Compute avoidance correction.
+	// Key: we accumulate the steered direction across frames (SteerDir) so a single wall
+	// can persistently redirect the pawn rather than being overridden each tick.
+	FVector const Avoidance = ComputeAvoidance(DesiredDir);
+	if (!Avoidance.IsNearlyZero())
+	{
+		// Wall detected: blend steered dir toward avoidance direction and lock it in
+		SteerDir = FMath::VInterpTo(SteerDir, (DesiredDir + Avoidance).GetSafeNormal(), LastDeltaTime, 4.f);
+	}
+	else
+	{
+		// Path clear: gradually return steered dir back to the desired direction
+		SteerDir = FMath::VInterpTo(SteerDir, DesiredDir, LastDeltaTime, 2.f);
+	}
+	SteerDir.Z = 0.f;
+	SteerDir = SteerDir.GetSafeNormal();
+
+	SurvivorPawn->AddMovementInput(SteerDir, 1.0f);
+
+	FRotator const NewRot = FMath::RInterpTo(
+		SurvivorPawn->GetActorRotation(), SteerDir.Rotation(), LastDeltaTime, TurnInterpSpeed);
 	SurvivorPawn->SetActorRotation(NewRot);
 }
 
@@ -595,12 +608,39 @@ void USurvivorBrainComponent::TryShootToward(FVector const& /*Direction*/)
 
 void USurvivorBrainComponent::PickNewWanderTarget()
 {
-	FVector const MyLoc   = SurvivorPawn->GetActorLocation();
-	FVector const RandDir = FMath::VRand();
-	FVector Dir = FVector(RandDir.X, RandDir.Y, 0.f);
-	Dir.Normalize();
-	Blackboard->WanderTarget       = MyLoc + Dir * WanderRadius;
+	FVector const MyLoc = SurvivorPawn->GetActorLocation();
+
+	// Prefer moving toward a spawn zone (houses) so the pawn naturally finds items.
+	// Pick the nearest zone we haven't recently visited, with a small random offset.
+	if (SpawnZoneLocations.Num() > 0)
+	{
+		// Build a weighted list: nearer zones are preferred but not exclusively chosen
+		int BestIdx = FMath::RandRange(0, SpawnZoneLocations.Num() - 1);
+		float BestScore = TNumericLimits<float>::Max();
+
+		for (int i = 0; i < SpawnZoneLocations.Num(); ++i)
+		{
+			float const Dist  = FVector::Dist(MyLoc, SpawnZoneLocations[i]);
+			// Bias toward zones that are not too close (already visited) and not too far
+			float const Score = FMath::Abs(Dist - WanderRadius) + FMath::FRandRange(0.f, WanderRadius * 0.4f);
+			if (Score < BestScore) { BestScore = Score; BestIdx = i; }
+		}
+
+		// Add a small random offset so the pawn doesn't always go to the exact same point
+		FVector const Jitter = FVector(FMath::FRandRange(-150.f, 150.f), FMath::FRandRange(-150.f, 150.f), 0.f);
+		Blackboard->WanderTarget       = SpawnZoneLocations[BestIdx] + Jitter;
+		Blackboard->bWanderTargetValid = true;
+		LastDistToWanderTarget         = FVector::Dist(MyLoc, Blackboard->WanderTarget);
+		StuckTimer                     = 0.f;
+		return;
+	}
+
+	// Fallback: random direction if no zones found
+	FVector RandDir = FMath::VRand(); RandDir.Z = 0.f; RandDir.Normalize();
+	Blackboard->WanderTarget       = MyLoc + RandDir * WanderRadius;
 	Blackboard->bWanderTargetValid = true;
+	LastDistToWanderTarget         = WanderRadius;
+	StuckTimer                     = 0.f;
 }
 
 ABaseItem* USurvivorBrainComponent::SelectBestItem() const
@@ -621,4 +661,65 @@ ABaseItem* USurvivorBrainComponent::SelectBestItem() const
 		return Blackboard->ClosestFood.Get();
 
 	return nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// Debug
+// ---------------------------------------------------------------------------
+
+void USurvivorBrainComponent::DrawDebugInfo()
+{
+	if (!GEngine || !SurvivorPawn) return;
+
+	FVector const MyLoc = SurvivorPawn->GetActorLocation();
+	UWorld* World = GetWorld();
+
+	GEngine->AddOnScreenDebugMessage(1, 0.f, FColor::Cyan,
+		FString::Printf(TEXT("State: %s | HP: %.0f%% | Stamina: %.0f%%"),
+			*SurvivorStateToString(CurrentState),
+			Blackboard->HealthRatio  * 100.f,
+			Blackboard->StaminaRatio * 100.f));
+
+	GEngine->AddOnScreenDebugMessage(2, 0.f, FColor::Yellow,
+		FString::Printf(TEXT("Zombies=%d  Items=%d  Weapon=%s | FleeTimer=%.1f"),
+			Blackboard->KnownZombies.Num(),
+			Blackboard->KnownItems.Num(),
+			Blackboard->bHasWeapon ? TEXT("YES") : TEXT("NO"),
+			FMath::Max(0.f, FleeLockedTimer)));
+
+	FVector Vel = FVector::ZeroVector;
+	if (auto* FPM = SurvivorPawn->GetComponentByClass<UFloatingPawnMovement>())
+		Vel = FPM->Velocity;
+	GEngine->AddOnScreenDebugMessage(3, 0.f, FColor::Green,
+		FString::Printf(TEXT("Speed=%.0f | Stuck=%.1fs"), Vel.Size(), StuckTimer));
+
+	if (CurrentState == ESurvivorState::Explore && Blackboard->bWanderTargetValid)
+	{
+		DrawDebugLine(World, MyLoc, Blackboard->WanderTarget, FColor::White, false, -1.f, 0, 2.f);
+		DrawDebugSphere(World, Blackboard->WanderTarget, 60.f, 8, FColor::White, false, -1.f);
+	}
+	if (CurrentState == ESurvivorState::SeekItem && IsValid(SeekTarget))
+	{
+		DrawDebugLine(World, MyLoc, SeekTarget->GetActorLocation(), FColor::Orange, false, -1.f, 0, 3.f);
+		DrawDebugSphere(World, SeekTarget->GetActorLocation(), 60.f, 8, FColor::Orange, false, -1.f);
+	}
+	if (CurrentState == ESurvivorState::Flee)
+	{
+		DrawDebugLine(World, MyLoc, CurrentFleeTarget, FColor::Red, false, -1.f, 0, 3.f);
+	}
+	if (Blackboard->NearestZombieDistance < 1e6f)
+	{
+		GEngine->AddOnScreenDebugMessage(5, 0.f, FColor::Red,
+			FString::Printf(TEXT("Nearest zombie: %.0f u"), Blackboard->NearestZombieDistance));
+	}
+
+	// Draw avoidance probe rays
+	FVector const Forward = SurvivorPawn->GetActorForwardVector();
+	float const Angles[] = { 0.f, -ProbeAngle, ProbeAngle, -ProbeAngle * 0.5f, ProbeAngle * 0.5f };
+	for (float Angle : Angles)
+	{
+		FVector const ProbeDir = Forward.RotateAngleAxis(Angle, FVector::UpVector);
+		DrawDebugLine(World, MyLoc, MyLoc + ProbeDir * ProbeLength,
+			FColor::Magenta, false, -1.f, 0, 1.f);
+	}
 }
