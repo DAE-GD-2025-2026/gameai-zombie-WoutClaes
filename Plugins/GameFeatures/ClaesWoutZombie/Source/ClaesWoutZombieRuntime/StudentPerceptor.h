@@ -5,10 +5,11 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Perception/AIPerceptionComponent.h"
-#include "Perception/AISenseConfig_Sight.h"
-#include "Perception/AISenseConfig_Damage.h"
-#include "Perception/AISense_Damage.h"
 #include "StudentPerceptor.generated.h"
+
+class USurvivorWanderer;
+class USurvivorItemPursuer;
+class USurvivorHouseExplorer;
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class CLAESWOUTZOMBIERUNTIME_API UStudentPerceptor : public UActorComponent
@@ -16,11 +17,35 @@ class CLAESWOUTZOMBIERUNTIME_API UStudentPerceptor : public UActorComponent
 	GENERATED_BODY()
 
 public:
-	// Sets default values for this component's properties
 	UStudentPerceptor();
-	
+
+protected:
 	virtual void BeginPlay() override;
 
+private:
+	void SetupNavCollision();
+	void SetupBehaviourComponents();
+
 	UFUNCTION()
-	virtual void OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus);
+	void OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus);
+
+	// Priority stack — each resumes the next lower priority when it finishes
+	// Priority 1 (highest): Item pursuit
+	void BeginItemPursuit();
+	void EndItemPursuit(); // resumes house exploration or wandering
+
+	// Priority 2: House exploration
+	void BeginHouseExploration();
+	void EndHouseExploration(); // resumes wandering
+
+	// Priority 3 (lowest): Wandering
+
+	UPROPERTY()
+	USurvivorWanderer* Wanderer{nullptr};
+
+	UPROPERTY()
+	USurvivorItemPursuer* ItemPursuer{nullptr};
+
+	UPROPERTY()
+	USurvivorHouseExplorer* HouseExplorer{nullptr};
 };
