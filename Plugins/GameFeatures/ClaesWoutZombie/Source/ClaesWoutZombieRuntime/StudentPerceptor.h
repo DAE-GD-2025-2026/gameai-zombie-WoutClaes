@@ -1,10 +1,15 @@
-﻿#pragma once
+﻿// Fill out your copyright notice in the Description page of Project Settings.
+
+#pragma once
 
 #include "CoreMinimal.h"
+#include "SurvivorMovement.h"
 #include "Components/ActorComponent.h"
+#include "Perception/AIPerceptionComponent.h"
+#include "Perception/AISenseConfig_Sight.h"
+#include "Perception/AISenseConfig_Damage.h"
+#include "Perception/AISense_Damage.h"
 #include "StudentPerceptor.generated.h"
-
-class USurvivorWanderer;
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class CLAESWOUTZOMBIERUNTIME_API UStudentPerceptor : public UActorComponent
@@ -12,15 +17,17 @@ class CLAESWOUTZOMBIERUNTIME_API UStudentPerceptor : public UActorComponent
 	GENERATED_BODY()
 
 public:
+	// Sets default values for this component's properties
 	UStudentPerceptor();
-
-protected:
+	
 	virtual void BeginPlay() override;
 
-private:
+	UFUNCTION()
+	virtual void OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus);
+	
 	void SetupNavCollision();
 	void SetupBehaviourComponents();
 
 	UPROPERTY()
-	USurvivorWanderer* Wanderer{nullptr};
+	USurvivorMovement* Wanderer{nullptr};
 };
