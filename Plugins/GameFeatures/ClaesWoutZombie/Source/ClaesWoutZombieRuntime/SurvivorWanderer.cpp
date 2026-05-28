@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #include "SurvivorWanderer.h"
 #include "AIController.h"
 #include "NavigationSystem.h"
@@ -19,9 +17,6 @@ void USurvivorWanderer::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	if (!bIsEnabled)
-		return;
-
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
 	if (!OwnerPawn)
 		return;
@@ -30,29 +25,24 @@ void USurvivorWanderer::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 	if (!AIC)
 		return;
 
-	FVector const PawnLocation = OwnerPawn->GetActorLocation();
-	float const SpeedSq = FVector::DistSquared(PawnLocation, LastLocation) / (DeltaTime * DeltaTime);
-	LastLocation = PawnLocation;
-
-	if (SpeedSq < 100.f) 
-	{
-		TimeStuck += DeltaTime;
-		if (TimeStuck > StuckThreshold)
-		{
-			TimeStuck = 0.f;
-			PickNewWanderTarget();
-			return;
-		}
-	}
-	else
-	{
-		TimeStuck = 0.f;
-	}
-
+	// Only pick a new target when idle
 	if (AIC->GetMoveStatus() == EPathFollowingStatus::Idle)
 	{
 		PickNewWanderTarget();
 	}
+}
+
+void USurvivorWanderer::DebugMoveTo(const FVector& Location)
+{
+	APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (!OwnerPawn)
+		return;
+
+	AAIController* AIC = Cast<AAIController>(OwnerPawn->GetController());
+	if (!AIC)
+		return;
+
+	AIC->MoveToLocation(Location, 50.f);
 }
 
 void USurvivorWanderer::PickNewWanderTarget()
@@ -69,29 +59,9 @@ void USurvivorWanderer::PickNewWanderTarget()
 	if (!NavSys)
 		return;
 
-	FVector const PawnLocation = OwnerPawn->GetActorLocation();
-	FVector const PawnForward = OwnerPawn->GetActorForwardVector();
-
-	FVector const SearchOrigin = PawnLocation + (PawnForward * (WanderRadius * 0.65f));
-
 	FNavLocation NavLoc;
-	if (NavSys->GetRandomReachablePointInRadius(SearchOrigin, WanderRadius * 0.75f, NavLoc))
+	if (NavSys->GetRandomReachablePointInRadius(OwnerPawn->GetActorLocation(), WanderRadius, NavLoc))
 	{
 		AIC->MoveToLocation(NavLoc.Location, AcceptanceRadius);
 	}
-	else
-	{
-		if (NavSys->GetRandomReachablePointInRadius(PawnLocation, WanderRadius, NavLoc))
-		{
-			AIC->MoveToLocation(NavLoc.Location, AcceptanceRadius);
-		}
-	}
-}
-
-void USurvivorWanderer::SetEnabled(bool bEnabled)
-{
-	bIsEnabled = bEnabled;
-
-	if (bIsEnabled)
-		PickNewWanderTarget();
 }

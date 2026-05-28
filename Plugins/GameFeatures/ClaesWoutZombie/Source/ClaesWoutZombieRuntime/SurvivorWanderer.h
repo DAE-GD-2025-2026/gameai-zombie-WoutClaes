@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -14,14 +12,12 @@ class CLAESWOUTZOMBIERUNTIME_API USurvivorWanderer : public UActorComponent
 public:
 	USurvivorWanderer();
 
-protected:
-	virtual void BeginPlay() override;
-
-public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-	void SetEnabled(bool bEnabled);
-	bool IsEnabled() const { return bIsEnabled; }
+	void DebugMoveTo(const FVector& Location);
+	
+protected:
+	virtual void BeginPlay() override;
 
 private:
 	void PickNewWanderTarget();
@@ -31,12 +27,4 @@ private:
 
 	UPROPERTY(EditAnywhere, Category="AI|Wander")
 	float AcceptanceRadius{200.f};
-
-	bool bIsEnabled{true};
-	
-	FVector LastLocation{FVector::ZeroVector};
-	float TimeStuck{0.f};
-
-	UPROPERTY(EditAnywhere, Category="AI|Wander")
-	float StuckThreshold{3.f};
 };
