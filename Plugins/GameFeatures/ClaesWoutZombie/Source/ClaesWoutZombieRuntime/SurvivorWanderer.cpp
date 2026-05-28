@@ -32,19 +32,6 @@ void USurvivorWanderer::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 	}
 }
 
-void USurvivorWanderer::DebugMoveTo(const FVector& Location)
-{
-	APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (!OwnerPawn)
-		return;
-
-	AAIController* AIC = Cast<AAIController>(OwnerPawn->GetController());
-	if (!AIC)
-		return;
-
-	AIC->MoveToLocation(Location, 50.f);
-}
-
 void USurvivorWanderer::PickNewWanderTarget()
 {
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());

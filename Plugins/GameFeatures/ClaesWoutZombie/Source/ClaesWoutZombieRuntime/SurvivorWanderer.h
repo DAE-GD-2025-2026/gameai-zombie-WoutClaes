@@ -13,8 +13,6 @@ public:
 	USurvivorWanderer();
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-
-	void DebugMoveTo(const FVector& Location);
 	
 protected:
 	virtual void BeginPlay() override;
