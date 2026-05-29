@@ -94,16 +94,14 @@ void USurvivorMovementClaesWout::PickNewWanderTarget()
 	if (!NavSys)
 		return;
  
-	// Project a point forward
 	FVector ForwardPoint = MyPawn->GetActorLocation() + (MyPawn->GetActorForwardVector() * WanderForwardDistance);
 	
 	FNavLocation NavLoc;
-	// Try to find a point around the forward projection
 	if (NavSys->GetRandomReachablePointInRadius(ForwardPoint, WanderForwardRadius, NavLoc))
 	{
 		MyAIController->MoveToLocation(NavLoc.Location, AcceptanceRadius);
 	}
-	else // Fallback: if we hit a wall, wander around current location
+	else
 	{
 		if (NavSys->GetRandomReachablePointInRadius(MyPawn->GetActorLocation(), WanderRadius, NavLoc))
 		{
@@ -403,13 +401,18 @@ void USurvivorMovementClaesWout::HandleZombieSpotted(AActor* Zombie)
 	if (!Zombie) return;
 	TargetZombie = Zombie;
 
+	bIsZombieVisible = true;
+	TimeSinceZombieSeen = 0.f;
+	
 	if (HasWeapon())
 	{
 		if (CanOverride(ESurvivorState::Combat))
 		{
 			State = ESurvivorState::Combat;
-			if (MyAIController) MyAIController->SetFocus(TargetZombie);
-			if (ASurvivorPawn* Survivor = Cast<ASurvivorPawn>(MyPawn)) Survivor->StartRunning();
+			if (MyAIController) 
+				MyAIController->SetFocus(TargetZombie);
+			if (Survivor) 
+				Survivor->StartRunning();
 		}
 	}
 	else
@@ -421,8 +424,17 @@ void USurvivorMovementClaesWout::HandleZombieSpotted(AActor* Zombie)
 			FleeDestination = FVector::ZeroVector;
 			
 			if (MyAIController) MyAIController->ClearFocus(EAIFocusPriority::Gameplay);
-			if (ASurvivorPawn* Survivor = Cast<ASurvivorPawn>(MyPawn)) Survivor->StartRunning();
+			if (Survivor) 
+				Survivor->StartRunning();
 		}
+	}
+}
+
+void USurvivorMovementClaesWout::HandleZombieLost(AActor* Zombie)
+{
+	if (TargetZombie == Zombie)
+	{
+		bIsZombieVisible = false;
 	}
 }
 
@@ -433,7 +445,8 @@ void USurvivorMovementClaesWout::TickFlee(float DeltaTime)
 	FleeTimer -= DeltaTime;
 	if (FleeTimer <= 0.f)
 	{
-		if (ASurvivorPawn* Survivor = Cast<ASurvivorPawn>(MyPawn)) Survivor->StopRunning();
+		if (Survivor) 
+			Survivor->StopRunning();
 		TargetZombie = nullptr;
 		State = ESurvivorState::Wander;
 		return;
@@ -521,7 +534,8 @@ void USurvivorMovementClaesWout::TickCombat(float DeltaTime)
 		{
 			TargetZombie = nullptr;
 			MyAIController->ClearFocus(EAIFocusPriority::Gameplay);
-			if (ASurvivorPawn* Survivor = Cast<ASurvivorPawn>(MyPawn)) Survivor->StopRunning();
+			if (Survivor) 
+				Survivor->StopRunning();
 			State = ESurvivorState::Wander;
 			return;
 		}
@@ -530,7 +544,8 @@ void USurvivorMovementClaesWout::TickCombat(float DeltaTime)
 	if (!IsValid(TargetZombie))
 	{
 		MyAIController->ClearFocus(EAIFocusPriority::Gameplay);
-		if (ASurvivorPawn* Survivor = Cast<ASurvivorPawn>(MyPawn)) Survivor->StopRunning();
+		if (Survivor) 
+			Survivor->StopRunning();
 		State = ESurvivorState::Wander;
 		return;
 	}
@@ -547,6 +562,9 @@ void USurvivorMovementClaesWout::TickCombat(float DeltaTime)
 	if (MyAIController->GetMoveStatus() != EPathFollowingStatus::Idle)
 	{
 		MyAIController->StopMovement();
+		
+		if (Survivor)
+			Survivor->StopRunning();
 	}
 
 	if (WeaponFireTimer > 0.f)

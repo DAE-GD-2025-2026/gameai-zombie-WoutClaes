@@ -32,6 +32,7 @@ public:
 	bool ShouldPickUpItem(ABaseItem* Item);
 	
 	void HandleZombieSpotted(AActor* Zombie);
+	void HandleZombieLost(AActor* Zombie);
 	
 protected:
 	virtual void BeginPlay() override;
@@ -52,8 +53,9 @@ private:
 	APawn* MyPawn = nullptr;
 
 	UPROPERTY()
-	class AAIController* MyAIController = nullptr;
+	AAIController* MyAIController = nullptr;
 	
+	ASurvivorPawn* Survivor = nullptr;
 	//========================
 	// State Tracking
 	//========================
