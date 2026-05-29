@@ -54,10 +54,6 @@ void UStudentPerceptorClaesWout::OnPerceptionUpdated(AActor* Actor, FAIStimulus 
 		{
 			if (Wanderer) Wanderer->HandleZombieSpotted(Actor);
 		}
-		else
-		{
-			if (Wanderer) Wanderer->HandleZombieLost(Actor);
-		}
 	}
 }
 

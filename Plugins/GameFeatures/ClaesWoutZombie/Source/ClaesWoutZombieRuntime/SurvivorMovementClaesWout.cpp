@@ -371,7 +371,15 @@ void USurvivorMovementClaesWout::TryUseInventory(float DeltaTime)
 //========================
 bool USurvivorMovementClaesWout::HasWeapon() const
 {
-	return GetWeaponSlot() != -1;
+	if (!Inventory) return false;
+	for (ABaseItem* InvItem : Inventory->GetInventory())
+	{
+		if (InvItem && InvItem->IsA(AWeapon::StaticClass()))
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 int32 USurvivorMovementClaesWout::GetWeaponSlot() const
@@ -393,26 +401,15 @@ int32 USurvivorMovementClaesWout::GetWeaponSlot() const
 void USurvivorMovementClaesWout::HandleZombieSpotted(AActor* Zombie)
 {
 	if (!Zombie) return;
-
 	TargetZombie = Zombie;
-	bIsZombieVisible = true;
-	TimeSinceZombieSeen = 0.f;
 
 	if (HasWeapon())
 	{
 		if (CanOverride(ESurvivorState::Combat))
 		{
 			State = ESurvivorState::Combat;
-			if (MyAIController)
-			{
-				MyAIController->ClearFocus(EAIFocusPriority::Gameplay);
-				MyAIController->SetFocus(TargetZombie);
-			}
-			if (ASurvivorPawn* Survivor = Cast<ASurvivorPawn>(MyPawn))
-			{
-				Survivor->StartRunning();
-			}
-			WeaponFireTimer = 0.f;
+			if (MyAIController) MyAIController->SetFocus(TargetZombie);
+			if (ASurvivorPawn* Survivor = Cast<ASurvivorPawn>(MyPawn)) Survivor->StartRunning();
 		}
 	}
 	else
@@ -420,35 +417,11 @@ void USurvivorMovementClaesWout::HandleZombieSpotted(AActor* Zombie)
 		if (CanOverride(ESurvivorState::Flee))
 		{
 			State = ESurvivorState::Flee;
+			FleeTimer = 4.0f;
+			FleeDestination = FVector::ZeroVector;
+			
 			if (MyAIController) MyAIController->ClearFocus(EAIFocusPriority::Gameplay);
-			if (ASurvivorPawn* Survivor = Cast<ASurvivorPawn>(MyPawn))
-			{
-				Survivor->StartRunning();
-			}
-			FleeTimer = 0.f;
-		}
-	}
-}
-
-void USurvivorMovementClaesWout::HandleZombieLost(AActor* Zombie)
-{
-	if (TargetZombie == Zombie)
-	{
-		bIsZombieVisible = false;
-		TargetZombie = nullptr;
-		
-		if (State == ESurvivorState::Combat || State == ESurvivorState::Flee)
-		{
-			if (MyAIController)
-			{
-				MyAIController->ClearFocus(EAIFocusPriority::Gameplay);
-				MyAIController->StopMovement();
-			}
-			if (ASurvivorPawn* Survivor = Cast<ASurvivorPawn>(MyPawn))
-			{
-				Survivor->StopRunning();
-			}
-			State = ESurvivorState::Wander;
+			if (ASurvivorPawn* Survivor = Cast<ASurvivorPawn>(MyPawn)) Survivor->StartRunning();
 		}
 	}
 }
@@ -457,55 +430,81 @@ void USurvivorMovementClaesWout::TickFlee(float DeltaTime)
 {
 	if (!MyPawn || !MyAIController) return;
 
-	if (!bIsZombieVisible)
-	{
-		TimeSinceZombieSeen += DeltaTime;
-		if (TimeSinceZombieSeen >= ZombieMemoryDuration)
-		{
-			TargetZombie = nullptr;
-			if (ASurvivorPawn* Survivor = Cast<ASurvivorPawn>(MyPawn)) Survivor->StopRunning();
-			State = ESurvivorState::Wander;
-			return;
-		}
-	}
-
-	if (!IsValid(TargetZombie))
+	FleeTimer -= DeltaTime;
+	if (FleeTimer <= 0.f)
 	{
 		if (ASurvivorPawn* Survivor = Cast<ASurvivorPawn>(MyPawn)) Survivor->StopRunning();
+		TargetZombie = nullptr;
 		State = ESurvivorState::Wander;
 		return;
 	}
 
-	if (HasWeapon())
+	if (HasWeapon() && IsValid(TargetZombie))
 	{
 		State = ESurvivorState::Combat;
 		MyAIController->SetFocus(TargetZombie);
-		WeaponFireTimer = 0.f;
 		return;
 	}
 
-	FleeTimer -= DeltaTime;
-	if (FleeTimer <= 0.f)
+	if (MyAIController->GetMoveStatus() == EPathFollowingStatus::Idle || FleeDestination.IsZero())
 	{
-		FleeTimer = FleeRepathInterval;
-
-		FVector ZombieLoc = TargetZombie->GetActorLocation();
+		FVector ZombieLoc = IsValid(TargetZombie) ? TargetZombie->GetActorLocation() : MyPawn->GetActorLocation() - MyPawn->GetActorForwardVector() * 500.f;
 		FVector MyLoc = MyPawn->GetActorLocation();
 
 		FVector FleeDirection = (MyLoc - ZombieLoc).GetSafeNormal2D();
-		FVector FleeTarget = MyLoc + (FleeDirection * 1200.f);
+		if (FleeDirection.IsNearlyZero()) 
+		{
+			FleeDirection = -MyPawn->GetActorForwardVector();
+		}
 
 		UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
 		if (NavSys)
 		{
 			FNavLocation NavLoc;
-			if (NavSys->GetRandomReachablePointInRadius(FleeTarget, 400.f, NavLoc))
+			bool bFoundValidPath = false;
+
+			FVector TargetPoint = MyLoc + (FleeDirection * 2500.f);
+			if (NavSys->ProjectPointToNavigation(TargetPoint, NavLoc, FVector(300.f, 300.f, 300.f)))
 			{
-				MyAIController->MoveToLocation(NavLoc.Location, 50.f);
+				FleeDestination = NavLoc.Location;
+				bFoundValidPath = true;
 			}
-			else if (NavSys->GetRandomReachablePointInRadius(MyLoc, 800.f, NavLoc))
+
+			if (!bFoundValidPath)
 			{
-				MyAIController->MoveToLocation(NavLoc.Location, 50.f);
+				FVector LeftDir = FleeDirection.RotateAngleAxis(45.f, FVector::UpVector);
+				TargetPoint = MyLoc + (LeftDir * 1500.f);
+				if (NavSys->ProjectPointToNavigation(TargetPoint, NavLoc, FVector(300.f, 300.f, 300.f)))
+				{
+					FleeDestination = NavLoc.Location;
+					bFoundValidPath = true;
+				}
+			}
+
+			if (!bFoundValidPath)
+			{
+				FVector RightDir = FleeDirection.RotateAngleAxis(-45.f, FVector::UpVector);
+				TargetPoint = MyLoc + (RightDir * 1500.f);
+				if (NavSys->ProjectPointToNavigation(TargetPoint, NavLoc, FVector(300.f, 300.f, 300.f)))
+				{
+					FleeDestination = NavLoc.Location;
+					bFoundValidPath = true;
+				}
+			}
+
+			if (!bFoundValidPath)
+			{
+				TargetPoint = MyLoc + (FleeDirection * 600.f);
+				if (NavSys->ProjectPointToNavigation(TargetPoint, NavLoc, FVector(500.f, 500.f, 500.f)))
+				{
+					FleeDestination = NavLoc.Location;
+					bFoundValidPath = true;
+				}
+			}
+
+			if (bFoundValidPath)
+			{
+				MyAIController->MoveToLocation(FleeDestination, 50.f);
 			}
 		}
 	}

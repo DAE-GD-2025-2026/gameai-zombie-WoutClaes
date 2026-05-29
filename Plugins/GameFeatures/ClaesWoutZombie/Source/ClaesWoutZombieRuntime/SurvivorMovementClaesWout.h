@@ -32,7 +32,6 @@ public:
 	bool ShouldPickUpItem(ABaseItem* Item);
 	
 	void HandleZombieSpotted(AActor* Zombie);
-	void HandleZombieLost(AActor* Zombie);
 	
 protected:
 	virtual void BeginPlay() override;
@@ -145,6 +144,7 @@ private:
 	float FleeTimer = 0.f;
 	bool bIsZombieVisible = false;
 	float TimeSinceZombieSeen = 0.f;
+	FVector FleeDestination = FVector::ZeroVector;
 	
 	UPROPERTY()
 	AActor* TargetZombie = nullptr;
