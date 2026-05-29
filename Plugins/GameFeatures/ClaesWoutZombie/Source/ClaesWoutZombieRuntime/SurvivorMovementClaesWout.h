@@ -9,6 +9,8 @@ enum class ESurvivorState : uint8
 	ExploreHouse = 1,
 	ExitHouse = 2,
 	PickupItem = 3,
+	Flee = 4,
+	Combat = 5,
 };
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
@@ -24,12 +26,13 @@ public:
 	ESurvivorState GetState() const{ return State; }
 	
 	void StartExploringHouse(AActor* House);
-	
 	void StartPickingUpItem(ABaseItem* Item);
 
 	bool CanOverride(ESurvivorState NewState) const { return GetPriority(NewState) > GetPriority(State); }
-	
 	bool ShouldPickUpItem(ABaseItem* Item);
+	
+	void HandleZombieSpotted(AActor* Zombie);
+	void HandleZombieLost(AActor* Zombie);
 	
 protected:
 	virtual void BeginPlay() override;
@@ -134,4 +137,30 @@ private:
 	float ItemUseCooldownDuration = 2.0f;
 
 	void TryUseInventory(float DeltaTime);
+	
+	//========================
+	// Zombie Engagement
+	//========================
+	float WeaponFireTimer = 0.f;
+	float FleeTimer = 0.f;
+	bool bIsZombieVisible = false;
+	float TimeSinceZombieSeen = 0.f;
+	
+	UPROPERTY()
+	AActor* TargetZombie = nullptr;
+
+	UPROPERTY(EditAnywhere, Category = "Combat")
+	float WeaponFireCooldownDuration = 0.6f;
+	
+	UPROPERTY(EditAnywhere, Category = "Flee")
+	float FleeRepathInterval = 0.4f;
+	
+	UPROPERTY(EditAnywhere, Category = "Flee")
+	float ZombieMemoryDuration = 4.0f;
+	
+	void TickFlee(float DeltaTime);
+	void TickCombat(float DeltaTime);
+
+	bool HasWeapon() const;
+	int32 GetWeaponSlot() const;
 };

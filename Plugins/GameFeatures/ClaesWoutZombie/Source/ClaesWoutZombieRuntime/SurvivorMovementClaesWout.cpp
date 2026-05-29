@@ -1,9 +1,10 @@
 #include "SurvivorMovementClaesWout.h"
 #include "AIController.h"
 #include "NavigationSystem.h"
+#include "Survivor/SurvivorPawn.h"
+#include "Items/Weapon.h"
 #include "Items/Food.h"
 #include "Items/Medkit.h"
-#include "Items/Pistol.h"
 #include "Navigation/PathFollowingComponent.h"
 
 USurvivorMovementClaesWout::USurvivorMovementClaesWout()
@@ -40,18 +41,25 @@ void USurvivorMovementClaesWout::TickComponent(float DeltaTime, ELevelTick TickT
 		break;
 
 	case ESurvivorState::ExploreHouse:
-		GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, TEXT("STATE: ExploreHouse"));
+		GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow, TEXT("STATE: Explore House"));
 		TickExploreHouse(DeltaTime);
 		break;
 	case ESurvivorState::ExitHouse:
-		GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Blue, TEXT("STATE: ExitHouse"));
+		GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Blue, TEXT("STATE: Exit House"));
 		TickExitHouse(DeltaTime);
 		break;
 	case ESurvivorState::PickupItem:
-		GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, TEXT("STATE: PickupItem"));
+		GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, TEXT("STATE: Pickup Item"));
 		TickPickupItem(DeltaTime);
 		break;
-
+	case ESurvivorState::Flee:
+		GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Orange, TEXT("STATE: Fleeing Zombie!"));
+		TickFlee(DeltaTime);
+		break;
+	case ESurvivorState::Combat:
+		GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Purple, TEXT("STATE: Combat Shooting!"));
+		TickCombat(DeltaTime);
+		break;
 	}
 }
 
@@ -236,14 +244,14 @@ bool USurvivorMovementClaesWout::ShouldPickUpItem(ABaseItem* Item)
 			continue;
 		}
 		
-		if (InvItem->IsA(APistol::StaticClass())) WeaponCount++;
+		if (InvItem->IsA(AWeapon::StaticClass())) WeaponCount++;
 		else if (InvItem->IsA(AFood::StaticClass())) FoodCount++;
 		else if (InvItem->IsA(AMedkit::StaticClass())) MedkitCount++;
 	}
 
 	if (EmptySlots == 0) return false; 
 
-	if (Item->IsA(APistol::StaticClass()) && WeaponCount >= 1) return false;
+	if (Item->IsA(AWeapon::StaticClass()) && WeaponCount >= 1) return false;
 	if (Item->IsA(AFood::StaticClass()) && FoodCount >= 2) return false;
 	if (Item->IsA(AMedkit::StaticClass()) && MedkitCount >= 2) return false;
 
@@ -313,11 +321,10 @@ void USurvivorMovementClaesWout::TryUseInventory(float DeltaTime)
 {
 	if (!Inventory) return;
 
-	// Process Cooldown
 	if (ItemCooldownTimer > 0.f)
 	{
 		ItemCooldownTimer -= DeltaTime;
-		return; // Still on cooldown, don't use anything
+		return;
 	}
 
 	const TArray<ABaseItem*>& Items = Inventory->GetInventory();
@@ -355,6 +362,210 @@ void USurvivorMovementClaesWout::TryUseInventory(float DeltaTime)
 				Inventory->RemoveItem(i);
 			}
 			return;
+		}
+	}
+}
+
+//========================
+// Zombie Engagement
+//========================
+bool USurvivorMovementClaesWout::HasWeapon() const
+{
+	return GetWeaponSlot() != -1;
+}
+
+int32 USurvivorMovementClaesWout::GetWeaponSlot() const
+{
+	if (!Inventory) return -1;
+	const TArray<ABaseItem*>& Items = Inventory->GetInventory();
+
+	for (int32 i = 0; i < Items.Num(); ++i)
+	{
+		ABaseItem* Item = Items[i];
+		if (Item && Item->IsA(AWeapon::StaticClass()) && Item->GetValue() > 0)
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+
+void USurvivorMovementClaesWout::HandleZombieSpotted(AActor* Zombie)
+{
+	if (!Zombie) return;
+
+	TargetZombie = Zombie;
+	bIsZombieVisible = true;
+	TimeSinceZombieSeen = 0.f;
+
+	if (HasWeapon())
+	{
+		if (CanOverride(ESurvivorState::Combat))
+		{
+			State = ESurvivorState::Combat;
+			if (MyAIController)
+			{
+				MyAIController->ClearFocus(EAIFocusPriority::Gameplay);
+				MyAIController->SetFocus(TargetZombie);
+			}
+			if (ASurvivorPawn* Survivor = Cast<ASurvivorPawn>(MyPawn))
+			{
+				Survivor->StartRunning();
+			}
+			WeaponFireTimer = 0.f;
+		}
+	}
+	else
+	{
+		if (CanOverride(ESurvivorState::Flee))
+		{
+			State = ESurvivorState::Flee;
+			if (MyAIController) MyAIController->ClearFocus(EAIFocusPriority::Gameplay);
+			if (ASurvivorPawn* Survivor = Cast<ASurvivorPawn>(MyPawn))
+			{
+				Survivor->StartRunning();
+			}
+			FleeTimer = 0.f;
+		}
+	}
+}
+
+void USurvivorMovementClaesWout::HandleZombieLost(AActor* Zombie)
+{
+	if (TargetZombie == Zombie)
+	{
+		bIsZombieVisible = false;
+		TargetZombie = nullptr;
+		
+		if (State == ESurvivorState::Combat || State == ESurvivorState::Flee)
+		{
+			if (MyAIController)
+			{
+				MyAIController->ClearFocus(EAIFocusPriority::Gameplay);
+				MyAIController->StopMovement();
+			}
+			if (ASurvivorPawn* Survivor = Cast<ASurvivorPawn>(MyPawn))
+			{
+				Survivor->StopRunning();
+			}
+			State = ESurvivorState::Wander;
+		}
+	}
+}
+
+void USurvivorMovementClaesWout::TickFlee(float DeltaTime)
+{
+	if (!MyPawn || !MyAIController) return;
+
+	if (!bIsZombieVisible)
+	{
+		TimeSinceZombieSeen += DeltaTime;
+		if (TimeSinceZombieSeen >= ZombieMemoryDuration)
+		{
+			TargetZombie = nullptr;
+			if (ASurvivorPawn* Survivor = Cast<ASurvivorPawn>(MyPawn)) Survivor->StopRunning();
+			State = ESurvivorState::Wander;
+			return;
+		}
+	}
+
+	if (!IsValid(TargetZombie))
+	{
+		if (ASurvivorPawn* Survivor = Cast<ASurvivorPawn>(MyPawn)) Survivor->StopRunning();
+		State = ESurvivorState::Wander;
+		return;
+	}
+
+	if (HasWeapon())
+	{
+		State = ESurvivorState::Combat;
+		MyAIController->SetFocus(TargetZombie);
+		WeaponFireTimer = 0.f;
+		return;
+	}
+
+	FleeTimer -= DeltaTime;
+	if (FleeTimer <= 0.f)
+	{
+		FleeTimer = FleeRepathInterval;
+
+		FVector ZombieLoc = TargetZombie->GetActorLocation();
+		FVector MyLoc = MyPawn->GetActorLocation();
+
+		FVector FleeDirection = (MyLoc - ZombieLoc).GetSafeNormal2D();
+		FVector FleeTarget = MyLoc + (FleeDirection * 1200.f);
+
+		UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+		if (NavSys)
+		{
+			FNavLocation NavLoc;
+			if (NavSys->GetRandomReachablePointInRadius(FleeTarget, 400.f, NavLoc))
+			{
+				MyAIController->MoveToLocation(NavLoc.Location, 50.f);
+			}
+			else if (NavSys->GetRandomReachablePointInRadius(MyLoc, 800.f, NavLoc))
+			{
+				MyAIController->MoveToLocation(NavLoc.Location, 50.f);
+			}
+		}
+	}
+}
+
+void USurvivorMovementClaesWout::TickCombat(float DeltaTime)
+{
+	if (!MyPawn || !MyAIController) return;
+
+	if (!bIsZombieVisible)
+	{
+		TimeSinceZombieSeen += DeltaTime;
+		if (TimeSinceZombieSeen >= ZombieMemoryDuration)
+		{
+			TargetZombie = nullptr;
+			MyAIController->ClearFocus(EAIFocusPriority::Gameplay);
+			if (ASurvivorPawn* Survivor = Cast<ASurvivorPawn>(MyPawn)) Survivor->StopRunning();
+			State = ESurvivorState::Wander;
+			return;
+		}
+	}
+
+	if (!IsValid(TargetZombie))
+	{
+		MyAIController->ClearFocus(EAIFocusPriority::Gameplay);
+		if (ASurvivorPawn* Survivor = Cast<ASurvivorPawn>(MyPawn)) Survivor->StopRunning();
+		State = ESurvivorState::Wander;
+		return;
+	}
+
+	int32 WeaponSlot = GetWeaponSlot();
+	if (WeaponSlot == -1)
+	{
+		MyAIController->ClearFocus(EAIFocusPriority::Gameplay);
+		State = ESurvivorState::Flee;
+		FleeTimer = 0.f;
+		return;
+	}
+
+	if (MyAIController->GetMoveStatus() != EPathFollowingStatus::Idle)
+	{
+		MyAIController->StopMovement();
+	}
+
+	if (WeaponFireTimer > 0.f)
+	{
+		WeaponFireTimer -= DeltaTime;
+	}
+	else
+	{
+		bool bFired = Inventory->UseItem(WeaponSlot);
+		if (bFired)
+		{
+			WeaponFireTimer = WeaponFireCooldownDuration;
+
+			ABaseItem* WeaponItem = Inventory->GetInventory()[WeaponSlot];
+			if (WeaponItem && WeaponItem->GetValue() <= 0)
+			{
+				Inventory->RemoveItem(WeaponSlot);
+			}
 		}
 	}
 }

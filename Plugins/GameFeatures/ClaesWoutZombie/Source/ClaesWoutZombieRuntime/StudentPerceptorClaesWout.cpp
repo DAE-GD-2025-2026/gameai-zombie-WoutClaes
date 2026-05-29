@@ -4,6 +4,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Village/House/House.h"
 #include "Items/BaseItem.h"
+#include "Zombies/BaseZombie.h"
 
 UStudentPerceptorClaesWout::UStudentPerceptorClaesWout()
 {
@@ -44,6 +45,18 @@ void UStudentPerceptorClaesWout::OnPerceptionUpdated(AActor* Actor, FAIStimulus 
 			{
 				Wanderer->StartExploringHouse(House);
 			}
+		}
+	}
+	
+	if (Actor && Actor != GetOwner() && Actor->IsA(ABaseZombie::StaticClass()))
+	{
+		if (Stimulus.WasSuccessfullySensed())
+		{
+			if (Wanderer) Wanderer->HandleZombieSpotted(Actor);
+		}
+		else
+		{
+			if (Wanderer) Wanderer->HandleZombieLost(Actor);
 		}
 	}
 }
