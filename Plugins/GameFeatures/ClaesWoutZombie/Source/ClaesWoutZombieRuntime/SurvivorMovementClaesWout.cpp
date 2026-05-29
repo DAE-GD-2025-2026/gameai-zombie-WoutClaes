@@ -3,7 +3,6 @@
 #include "NavigationSystem.h"
 #include "Items/Food.h"
 #include "Items/Medkit.h"
-#include "Items/Pistol.h"
 #include "Navigation/PathFollowingComponent.h"
 
 USurvivorMovementClaesWout::USurvivorMovementClaesWout()
@@ -16,8 +15,13 @@ void USurvivorMovementClaesWout::BeginPlay()
 	Super::BeginPlay();
 	
 	Inventory = GetOwner()->FindComponentByClass<UInventoryComponent>();
-	
 	Health = GetOwner()->FindComponentByClass<UHealthComponent>();
+	
+	MyPawn = Cast<APawn>(GetOwner());
+	if (MyPawn)
+	{
+		MyAIController = Cast<AAIController>(MyPawn->GetController());
+	}
 }
 
 void USurvivorMovementClaesWout::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -54,15 +58,13 @@ void USurvivorMovementClaesWout::TickComponent(float DeltaTime, ELevelTick TickT
 //========================
 void USurvivorMovementClaesWout::TickWander(float DeltaTime)
 {
-	APawn* Pawn = Cast<APawn>(GetOwner());
-	if (!Pawn)
+	if (!MyPawn)
 		return;
 
-	AAIController* AIC = Cast<AAIController>(Pawn->GetController());
-	if (!AIC)
+	if (!MyAIController) 
 		return;
 
-	if (AIC->GetMoveStatus() == EPathFollowingStatus::Idle)
+	if (MyAIController->GetMoveStatus() == EPathFollowingStatus::Idle)
 	{
 		PickNewWanderTarget();
 	}
@@ -70,22 +72,28 @@ void USurvivorMovementClaesWout::TickWander(float DeltaTime)
 
 void USurvivorMovementClaesWout::PickNewWanderTarget()
 {
-	APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (!OwnerPawn)
-		return;
- 
-	AAIController* AIC = Cast<AAIController>(OwnerPawn->GetController());
-	if (!AIC)
+	if (!MyPawn || !MyAIController)
 		return;
  
 	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
 	if (!NavSys)
 		return;
  
+	// Project a point forward
+	FVector ForwardPoint = MyPawn->GetActorLocation() + (MyPawn->GetActorForwardVector() * WanderForwardDistance);
+	
 	FNavLocation NavLoc;
-	if (NavSys->GetRandomReachablePointInRadius(OwnerPawn->GetActorLocation(), WanderRadius, NavLoc))
+	// Try to find a point around the forward projection
+	if (NavSys->GetRandomReachablePointInRadius(ForwardPoint, WanderForwardRadius, NavLoc))
 	{
-		AIC->MoveToLocation(NavLoc.Location, AcceptanceRadius);
+		MyAIController->MoveToLocation(NavLoc.Location, AcceptanceRadius);
+	}
+	else // Fallback: if we hit a wall, wander around current location
+	{
+		if (NavSys->GetRandomReachablePointInRadius(MyPawn->GetActorLocation(), WanderRadius, NavLoc))
+		{
+			MyAIController->MoveToLocation(NavLoc.Location, AcceptanceRadius);
+		}
 	}
 }
 
@@ -94,7 +102,7 @@ void USurvivorMovementClaesWout::PickNewWanderTarget()
 //========================
 void USurvivorMovementClaesWout::TickExploreHouse(float DeltaTime)
 {
-	if (!CurrentHouse)
+	if (!CurrentHouse || !MyPawn)
 	{
 		State = ESurvivorState::Wander;
 		return;
@@ -105,26 +113,19 @@ void USurvivorMovementClaesWout::TickExploreHouse(float DeltaTime)
 	{
 		State = ESurvivorState::ExitHouse;
 		ExitHouseTimer = 0.f;
+		if (MyAIController) MyAIController->MoveToLocation(HouseExitLocation, 150.f); // Call once!
 		return;
 	}
-	
-	APawn* Pawn = Cast<APawn>(GetOwner());
-	if (!Pawn)
-		return;
-
-	AAIController* AIC = Cast<AAIController>(Pawn->GetController());
-	if (!AIC)
-		return;
 
 	FVector HouseCenter;
 	FVector Extents;
 	CurrentHouse->GetActorBounds(true, HouseCenter, Extents);
 
-	float DistSq = FVector::DistSquared(Pawn->GetActorLocation(), HouseCenter);
+	float DistSq = FVector::DistSquared(MyPawn->GetActorLocation(), HouseCenter);
 	if (DistSq <= HouseAcceptanceRadius * HouseAcceptanceRadius)
 	{
 		State = ESurvivorState::ExitHouse;
-		AIC->MoveToLocation(HouseExitLocation, 150.f);
+		if (MyAIController) MyAIController->MoveToLocation(HouseExitLocation, 150.f); // Call once!
 	}
 }
 
@@ -149,19 +150,16 @@ void USurvivorMovementClaesWout::StartExploringHouse(AActor* House)
 
 void USurvivorMovementClaesWout::MoveToHouseCenter()
 {
-	APawn* Pawn = Cast<APawn>(GetOwner());
-	if (!Pawn)
+	if (!MyPawn)
 		return;
 
-	AAIController* AIC = Cast<AAIController>(Pawn->GetController());
-	if (!AIC)
-		return;
+	if (!MyAIController) return;
 
 	FVector HouseCenter;
 	FVector Extents;
 	CurrentHouse->GetActorBounds(true, HouseCenter, Extents);
 
-	AIC->MoveToLocation(HouseCenter, HouseAcceptanceRadius);
+	MyAIController->MoveToLocation(HouseCenter, HouseAcceptanceRadius);
 }
 
 //========================
@@ -178,23 +176,15 @@ void USurvivorMovementClaesWout::TickExitHouse(float DeltaTime)
 		return;
 	}
 	
-	APawn* Pawn = Cast<APawn>(GetOwner());
-	if (!Pawn)
+	if (!MyPawn)
 		return;
 
-	AAIController* AIC = Cast<AAIController>(Pawn->GetController());
-	if (!AIC)
-		return;
-
-	float DistSq = FVector::DistSquared(Pawn->GetActorLocation(), HouseExitLocation);
+	float DistSq = FVector::DistSquared(MyPawn->GetActorLocation(), HouseExitLocation);
 	if (DistSq <= 150.f * 150.f)
 	{
 		State = ESurvivorState::Wander;
 		CurrentHouse = nullptr;
-		return;
 	}
-	
-	AIC->MoveToLocation(HouseExitLocation, 150.f);
 }
 
 //========================
@@ -205,6 +195,8 @@ void USurvivorMovementClaesWout::StartPickingUpItem(ABaseItem* Item)
 	if (!Item || PickedUpItems.Contains(Item))
 		return;
 
+	PreviousState = State;
+	
 	CurrentItem = Item;
 	State = ESurvivorState::PickupItem;
 	PickupTimer = 0.f;
@@ -214,10 +206,9 @@ void USurvivorMovementClaesWout::StartPickingUpItem(ABaseItem* Item)
 	else
 		ItemPickupRadius = 100.f;
 
-	APawn* Pawn = Cast<APawn>(GetOwner());
-	if (AAIController* AIC = Cast<AAIController>(Pawn->GetController()))
+	if (MyAIController)
 	{
-		AIC->MoveToActor(Item, ItemPickupRadius);
+		MyAIController->MoveToActor(Item);
 	}
 }
 
@@ -235,26 +226,23 @@ void USurvivorMovementClaesWout::TickPickupItem(float DeltaTime)
 	if (PickupTimer >= MaxPickupTime)
 	{
 		CurrentItem = nullptr;
-		State = ESurvivorState::Wander;
+		State = PreviousState;
 		return;
 	}
 	
-	if (!CurrentItem)
+	if (!CurrentItem || !MyPawn)
 	{
-		State = ESurvivorState::Wander;
+		State = PreviousState;
 		return;
 	}
-
-	APawn* Pawn = Cast<APawn>(GetOwner());
-	AAIController* AIC = Cast<AAIController>(Pawn->GetController());
 
 	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow,
 	FString::Printf(TEXT("Dist: %.1f / PickupRadius: %.1f"),
-	FVector::Dist(Pawn->GetActorLocation(), CurrentItem->GetActorLocation()),
+	FVector::Dist(MyPawn->GetActorLocation(), CurrentItem->GetActorLocation()),
 	ItemPickupRadius));
 
 	
-	float DistSq = FVector::DistSquared(Pawn->GetActorLocation(), CurrentItem->GetActorLocation());
+	float DistSq = FVector::DistSquared(MyPawn->GetActorLocation(), CurrentItem->GetActorLocation());
 	if (DistSq <= ItemPickupRadius * ItemPickupRadius)
 	{
 		if (Inventory)
@@ -268,6 +256,8 @@ void USurvivorMovementClaesWout::TickPickupItem(float DeltaTime)
 
 					if (bSuccess)
 					{
+						PickedUpItems.Add(CurrentItem);
+						
 						GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Green,
 							FString::Printf(TEXT("Picked up item: %s"), *CurrentItem->GetName()));
 					}
@@ -276,19 +266,14 @@ void USurvivorMovementClaesWout::TickPickupItem(float DeltaTime)
 						GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Red,
 							TEXT("GrabItem failed"));
 					}
-
 					break;
 				}
 			}
 		}
 
-		PickedUpItems.Add(CurrentItem);
 		CurrentItem = nullptr;
-		State = ESurvivorState::Wander;
-		return;
+		State = PreviousState;
 	}
-
-	AIC->MoveToLocation(CurrentItem->GetActorLocation());
 }
 
 //========================

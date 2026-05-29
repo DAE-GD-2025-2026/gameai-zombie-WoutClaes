@@ -35,6 +35,21 @@ protected:
 
 private:
 	//========================
+	// Cached Components
+	//========================
+	UPROPERTY()
+	APawn* MyPawn = nullptr;
+
+	UPROPERTY()
+	class AAIController* MyAIController = nullptr;
+	
+	//========================
+	// State Tracking
+	//========================
+	ESurvivorState State = ESurvivorState::Wander;
+	ESurvivorState PreviousState = ESurvivorState::Wander;
+	
+	//========================
 	// Helper
 	//========================
 	int32 GetPriority(ESurvivorState CheckState) const { return static_cast<int32>(CheckState); }
@@ -42,7 +57,11 @@ private:
 	//========================
 	// Wander
 	//========================
-	ESurvivorState State = ESurvivorState::Wander;
+	UPROPERTY(EditAnywhere, Category = "Wander")
+	float WanderForwardDistance = 800.f;
+
+	UPROPERTY(EditAnywhere, Category = "Wander")
+	float WanderForwardRadius = 400.f;
 	
 	void TickWander(float DeltaTime);
 	void PickNewWanderTarget();
