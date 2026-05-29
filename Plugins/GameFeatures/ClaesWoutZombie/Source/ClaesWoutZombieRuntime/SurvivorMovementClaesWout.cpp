@@ -1,4 +1,4 @@
-#include "SurvivorMovement.h"
+#include "SurvivorMovementClaesWout.h"
 #include "AIController.h"
 #include "NavigationSystem.h"
 #include "Items/Food.h"
@@ -6,12 +6,12 @@
 #include "Items/Pistol.h"
 #include "Navigation/PathFollowingComponent.h"
 
-USurvivorMovement::USurvivorMovement()
+USurvivorMovementClaesWout::USurvivorMovementClaesWout()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 }
 
-void USurvivorMovement::BeginPlay()
+void USurvivorMovementClaesWout::BeginPlay()
 {
 	Super::BeginPlay();
 	
@@ -20,7 +20,7 @@ void USurvivorMovement::BeginPlay()
 	Health = GetOwner()->FindComponentByClass<UHealthComponent>();
 }
 
-void USurvivorMovement::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+void USurvivorMovementClaesWout::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	
@@ -52,7 +52,7 @@ void USurvivorMovement::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 //========================
 // Wander
 //========================
-void USurvivorMovement::TickWander(float DeltaTime)
+void USurvivorMovementClaesWout::TickWander(float DeltaTime)
 {
 	APawn* Pawn = Cast<APawn>(GetOwner());
 	if (!Pawn)
@@ -68,7 +68,7 @@ void USurvivorMovement::TickWander(float DeltaTime)
 	}
 }
 
-void USurvivorMovement::PickNewWanderTarget()
+void USurvivorMovementClaesWout::PickNewWanderTarget()
 {
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
 	if (!OwnerPawn)
@@ -92,7 +92,7 @@ void USurvivorMovement::PickNewWanderTarget()
 //========================
 // House Exploring
 //========================
-void USurvivorMovement::TickExploreHouse(float DeltaTime)
+void USurvivorMovementClaesWout::TickExploreHouse(float DeltaTime)
 {
 	if (!CurrentHouse)
 	{
@@ -128,7 +128,7 @@ void USurvivorMovement::TickExploreHouse(float DeltaTime)
 	}
 }
 
-void USurvivorMovement::StartExploringHouse(AActor* House)
+void USurvivorMovementClaesWout::StartExploringHouse(AActor* House)
 {
 	if (!House)
 		return;
@@ -147,7 +147,7 @@ void USurvivorMovement::StartExploringHouse(AActor* House)
 	MoveToHouseCenter();
 }
 
-void USurvivorMovement::MoveToHouseCenter()
+void USurvivorMovementClaesWout::MoveToHouseCenter()
 {
 	APawn* Pawn = Cast<APawn>(GetOwner());
 	if (!Pawn)
@@ -167,7 +167,7 @@ void USurvivorMovement::MoveToHouseCenter()
 //========================
 // House Exiting
 //========================
-void USurvivorMovement::TickExitHouse(float DeltaTime)
+void USurvivorMovementClaesWout::TickExitHouse(float DeltaTime)
 {
 	ExitHouseTimer += DeltaTime;
 
@@ -200,7 +200,7 @@ void USurvivorMovement::TickExitHouse(float DeltaTime)
 //========================
 // Pickup Item
 //========================
-void USurvivorMovement::StartPickingUpItem(ABaseItem* Item)
+void USurvivorMovementClaesWout::StartPickingUpItem(ABaseItem* Item)
 {
 	if (!Item || PickedUpItems.Contains(Item))
 		return;
@@ -221,7 +221,7 @@ void USurvivorMovement::StartPickingUpItem(ABaseItem* Item)
 	}
 }
 
-bool USurvivorMovement::ShouldPickUpItem(ABaseItem* Item)
+bool USurvivorMovementClaesWout::ShouldPickUpItem(ABaseItem* Item)
 {
 	if (!Item || !Inventory)
 		return false;
@@ -229,7 +229,7 @@ bool USurvivorMovement::ShouldPickUpItem(ABaseItem* Item)
 	return true;
 }
 
-void USurvivorMovement::TickPickupItem(float DeltaTime)
+void USurvivorMovementClaesWout::TickPickupItem(float DeltaTime)
 {
 	PickupTimer += DeltaTime;
 	if (PickupTimer >= MaxPickupTime)
@@ -294,7 +294,7 @@ void USurvivorMovement::TickPickupItem(float DeltaTime)
 //========================
 // Inventory
 //========================
-void USurvivorMovement::TryUseInventory()
+void USurvivorMovementClaesWout::TryUseInventory()
 {
 	if (!Inventory || !Health)
 		return;

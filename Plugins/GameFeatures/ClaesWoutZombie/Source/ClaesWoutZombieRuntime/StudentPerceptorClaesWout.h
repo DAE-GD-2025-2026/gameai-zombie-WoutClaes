@@ -3,21 +3,21 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "SurvivorMovement.h"
+#include "SurvivorMovementClaesWout.h"
 #include "Components/ActorComponent.h"
 #include "Perception/AIPerceptionComponent.h"
 #include "Perception/AISenseConfig_Sight.h"
 #include "Perception/AISenseConfig_Damage.h"
 #include "Perception/AISense_Damage.h"
-#include "StudentPerceptor.generated.h"
+#include "StudentPerceptorClaesWout.generated.h"
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class CLAESWOUTZOMBIERUNTIME_API UStudentPerceptor : public UActorComponent
+class CLAESWOUTZOMBIERUNTIME_API UStudentPerceptorClaesWout : public UActorComponent
 {
 	GENERATED_BODY()
 
 public:
-	UStudentPerceptor();
+	UStudentPerceptorClaesWout();
 	
 	virtual void BeginPlay() override;
 
@@ -28,5 +28,5 @@ public:
 	void SetupBehaviourComponents();
 
 	UPROPERTY()
-	USurvivorMovement* Wanderer{nullptr};
+	USurvivorMovementClaesWout* Wanderer{nullptr};
 };

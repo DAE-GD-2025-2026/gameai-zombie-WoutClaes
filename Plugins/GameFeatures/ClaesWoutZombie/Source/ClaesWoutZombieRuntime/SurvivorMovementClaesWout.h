@@ -1,7 +1,7 @@
 #pragma once
 #include "Common/InventoryComponent.h"
 
-#include "SurvivorMovement.generated.h"
+#include "SurvivorMovementClaesWout.generated.h"
 
 UENUM()
 enum class ESurvivorState : uint8
@@ -13,12 +13,12 @@ enum class ESurvivorState : uint8
 };
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class CLAESWOUTZOMBIERUNTIME_API USurvivorMovement : public UActorComponent
+class CLAESWOUTZOMBIERUNTIME_API USurvivorMovementClaesWout : public UActorComponent
 {
 	GENERATED_BODY()
 
 public:
-	USurvivorMovement();
+	USurvivorMovementClaesWout();
 	
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 

@@ -1,29 +1,29 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
-#include "StudentPerceptor.h"
+#include "StudentPerceptorClaesWout.h"
 #include "Components/CapsuleComponent.h"
 #include "Village/House/House.h"
 #include "Items/BaseItem.h"
 
-UStudentPerceptor::UStudentPerceptor()
+UStudentPerceptorClaesWout::UStudentPerceptorClaesWout()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 }
 
-void UStudentPerceptor::BeginPlay()
+void UStudentPerceptorClaesWout::BeginPlay()
 {
 	Super::BeginPlay();
 	
 	if (auto PerceptionComp = GetOwner()->GetComponentByClass<UAIPerceptionComponent>())
 	{
-		PerceptionComp->OnTargetPerceptionUpdated.AddDynamic(this, &UStudentPerceptor::OnPerceptionUpdated);
+		PerceptionComp->OnTargetPerceptionUpdated.AddDynamic(this, &UStudentPerceptorClaesWout::OnPerceptionUpdated);
 	}
 	
 	SetupNavCollision();
 	SetupBehaviourComponents();
 }
 
-void UStudentPerceptor::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
+void UStudentPerceptorClaesWout::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
 {
 	if (ABaseItem* Item = Cast<ABaseItem>(Actor))
 	{
@@ -48,7 +48,7 @@ void UStudentPerceptor::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
 	}
 }
 
-void UStudentPerceptor::SetupNavCollision()
+void UStudentPerceptorClaesWout::SetupNavCollision()
 {
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
 	if (!OwnerPawn)
@@ -64,12 +64,12 @@ void UStudentPerceptor::SetupNavCollision()
 	OwnerPawn->SetRootComponent(Capsule);
 }
 
-void UStudentPerceptor::SetupBehaviourComponents()
+void UStudentPerceptorClaesWout::SetupBehaviourComponents()
 {
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
 	if (!OwnerPawn)
 		return;
 
-	Wanderer = NewObject<USurvivorMovement>(OwnerPawn, TEXT("SurvivorWanderer"));
+	Wanderer = NewObject<USurvivorMovementClaesWout>(OwnerPawn, TEXT("SurvivorWanderer"));
 	Wanderer->RegisterComponent();
 }
