@@ -3,6 +3,7 @@
 #include "NavigationSystem.h"
 #include "Items/Food.h"
 #include "Items/Medkit.h"
+#include "Items/Pistol.h"
 #include "Navigation/PathFollowingComponent.h"
 
 USurvivorMovementClaesWout::USurvivorMovementClaesWout()
@@ -16,6 +17,7 @@ void USurvivorMovementClaesWout::BeginPlay()
 	
 	Inventory = GetOwner()->FindComponentByClass<UInventoryComponent>();
 	Health = GetOwner()->FindComponentByClass<UHealthComponent>();
+	Stamina = GetOwner()->FindComponentByClass<UStaminaComponent>();
 	
 	MyPawn = Cast<APawn>(GetOwner());
 	if (MyPawn)
@@ -214,8 +216,33 @@ void USurvivorMovementClaesWout::StartPickingUpItem(ABaseItem* Item)
 
 bool USurvivorMovementClaesWout::ShouldPickUpItem(ABaseItem* Item)
 {
-	if (!Item || !Inventory)
-		return false;
+	if (!Item || !Inventory) return false;
+	
+	if (Item->GetValue() <= 0) return false; 
+
+	int WeaponCount = 0;
+	int FoodCount = 0;
+	int MedkitCount = 0;
+	int EmptySlots = 0;
+
+	for (ABaseItem* InvItem : Inventory->GetInventory())
+	{
+		if (!InvItem)
+		{
+			EmptySlots++;
+			continue;
+		}
+		
+		if (InvItem->IsA(APistol::StaticClass())) WeaponCount++;
+		else if (InvItem->IsA(AFood::StaticClass())) FoodCount++;
+		else if (InvItem->IsA(AMedkit::StaticClass())) MedkitCount++;
+	}
+
+	if (EmptySlots == 0) return false; 
+
+	if (Item->IsA(APistol::StaticClass()) && WeaponCount >= 1) return false;
+	if (Item->IsA(AFood::StaticClass()) && FoodCount >= 2) return false;
+	if (Item->IsA(AMedkit::StaticClass()) && MedkitCount >= 2) return false;
 
 	return true;
 }
@@ -281,7 +308,7 @@ void USurvivorMovementClaesWout::TickPickupItem(float DeltaTime)
 //========================
 void USurvivorMovementClaesWout::TryUseInventory()
 {
-	if (!Inventory || !Health)
+	if (!Inventory)
 		return;
 
 	const TArray<ABaseItem*>& Items = Inventory->GetInventory();
@@ -289,15 +316,30 @@ void USurvivorMovementClaesWout::TryUseInventory()
 	for (int32 i = 0; i < Items.Num(); ++i)
 	{
 		ABaseItem* Item = Items[i];
-		if (!Item)
+		if (!Item || Item->GetValue() <= 0) 
 			continue;
 
-		if (Item->IsA(AMedkit::StaticClass()))
+		if (Health && Item->IsA(AMedkit::StaticClass()))
 		{
 			if (Health->GetHealth() <= Health->GetMaxHealth() * 0.5f)
 			{
-				Inventory->UseItem(i);
-				return;
+				if (Inventory->UseItem(i))
+				{
+					Inventory->RemoveItem(i);
+					return;
+				}
+			}
+		}
+		
+		if (Stamina && Item->IsA(AFood::StaticClass()))
+		{
+			if (Stamina->GetCurrentStamina() <= Stamina->GetMaxStamina() * 0.3f)
+			{
+				if (Inventory->UseItem(i))
+				{
+					Inventory->RemoveItem(i);
+					return;
+				}
 			}
 		}
 	}

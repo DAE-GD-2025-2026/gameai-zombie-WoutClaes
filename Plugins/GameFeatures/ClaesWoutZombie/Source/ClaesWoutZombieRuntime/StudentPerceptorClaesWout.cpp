@@ -29,7 +29,7 @@ void UStudentPerceptorClaesWout::OnPerceptionUpdated(AActor* Actor, FAIStimulus 
 	{
 		if (Stimulus.WasSuccessfullySensed())
 		{
-			if (Wanderer && Wanderer->CanOverride(ESurvivorState::PickupItem))
+			if (Wanderer && Wanderer->CanOverride(ESurvivorState::PickupItem) && Wanderer->ShouldPickUpItem(Item))
 			{
 				Wanderer->StartPickingUpItem(Item);
 			}

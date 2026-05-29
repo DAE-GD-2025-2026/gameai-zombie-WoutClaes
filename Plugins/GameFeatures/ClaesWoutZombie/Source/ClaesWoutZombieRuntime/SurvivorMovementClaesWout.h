@@ -1,6 +1,5 @@
 #pragma once
 #include "Common/InventoryComponent.h"
-
 #include "SurvivorMovementClaesWout.generated.h"
 
 UENUM()
@@ -29,6 +28,8 @@ public:
 	void StartPickingUpItem(ABaseItem* Item);
 
 	bool CanOverride(ESurvivorState NewState) const { return GetPriority(NewState) > GetPriority(State); }
+	
+	bool ShouldPickUpItem(ABaseItem* Item);
 	
 protected:
 	virtual void BeginPlay() override;
@@ -113,12 +114,12 @@ private:
 	float ItemPickupRadius = 120.f;
 	
 	void TickPickupItem(float DeltaTime);
-	bool ShouldPickUpItem(ABaseItem* Item);
 	
 	//========================
 	// Inventory
 	//========================
 	UHealthComponent* Health = nullptr;
+	UStaminaComponent* Stamina = nullptr;
 
 	void TryUseInventory();
 };
