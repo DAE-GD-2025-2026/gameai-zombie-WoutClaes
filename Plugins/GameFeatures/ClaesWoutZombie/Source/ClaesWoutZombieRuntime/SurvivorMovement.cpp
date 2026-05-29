@@ -1,6 +1,9 @@
 #include "SurvivorMovement.h"
 #include "AIController.h"
 #include "NavigationSystem.h"
+#include "Items/Food.h"
+#include "Items/Medkit.h"
+#include "Items/Pistol.h"
 #include "Navigation/PathFollowingComponent.h"
 
 USurvivorMovement::USurvivorMovement()
@@ -11,15 +14,22 @@ USurvivorMovement::USurvivorMovement()
 void USurvivorMovement::BeginPlay()
 {
 	Super::BeginPlay();
+	
+	Inventory = GetOwner()->FindComponentByClass<UInventoryComponent>();
+	
+	Health = GetOwner()->FindComponentByClass<UHealthComponent>();
 }
 
 void USurvivorMovement::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	
+	TryUseInventory();
 
 	switch (State)
 	{
 	case ESurvivorState::Wander:
+		GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, TEXT("STATE: Wander"));
 		TickWander(DeltaTime);
 		break;
 
@@ -31,6 +41,11 @@ void USurvivorMovement::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 		GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Blue, TEXT("STATE: ExitHouse"));
 		TickExitHouse(DeltaTime);
 		break;
+	case ESurvivorState::PickupItem:
+		GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, TEXT("STATE: PickupItem"));
+		TickPickupItem(DeltaTime);
+		break;
+
 	}
 }
 
@@ -180,4 +195,125 @@ void USurvivorMovement::TickExitHouse(float DeltaTime)
 	}
 	
 	AIC->MoveToLocation(HouseExitLocation, 150.f);
+}
+
+//========================
+// Pickup Item
+//========================
+void USurvivorMovement::StartPickingUpItem(ABaseItem* Item)
+{
+	if (!Item || PickedUpItems.Contains(Item))
+		return;
+
+	CurrentItem = Item;
+	State = ESurvivorState::PickupItem;
+	PickupTimer = 0.f;
+	
+	if (Inventory)
+		ItemPickupRadius = Inventory->GetPickupRange();
+	else
+		ItemPickupRadius = 100.f;
+
+	APawn* Pawn = Cast<APawn>(GetOwner());
+	if (AAIController* AIC = Cast<AAIController>(Pawn->GetController()))
+	{
+		AIC->MoveToActor(Item, ItemPickupRadius);
+	}
+}
+
+bool USurvivorMovement::ShouldPickUpItem(ABaseItem* Item)
+{
+	if (!Item || !Inventory)
+		return false;
+
+	return true;
+}
+
+void USurvivorMovement::TickPickupItem(float DeltaTime)
+{
+	PickupTimer += DeltaTime;
+	if (PickupTimer >= MaxPickupTime)
+	{
+		CurrentItem = nullptr;
+		State = ESurvivorState::Wander;
+		return;
+	}
+	
+	if (!CurrentItem)
+	{
+		State = ESurvivorState::Wander;
+		return;
+	}
+
+	APawn* Pawn = Cast<APawn>(GetOwner());
+	AAIController* AIC = Cast<AAIController>(Pawn->GetController());
+
+	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow,
+	FString::Printf(TEXT("Dist: %.1f / PickupRadius: %.1f"),
+	FVector::Dist(Pawn->GetActorLocation(), CurrentItem->GetActorLocation()),
+	ItemPickupRadius));
+
+	
+	float DistSq = FVector::DistSquared(Pawn->GetActorLocation(), CurrentItem->GetActorLocation());
+	if (DistSq <= ItemPickupRadius * ItemPickupRadius)
+	{
+		if (Inventory)
+		{
+			int32 Capacity = Inventory->GetInventoryCapacity();
+			for (int32 Slot = 0; Slot < Capacity; ++Slot)
+			{
+				if (Inventory->GetInventory()[Slot] == nullptr)
+				{
+					bool bSuccess = Inventory->GrabItem(Slot, CurrentItem);
+
+					if (bSuccess)
+					{
+						GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Green,
+							FString::Printf(TEXT("Picked up item: %s"), *CurrentItem->GetName()));
+					}
+					else
+					{
+						GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Red,
+							TEXT("GrabItem failed"));
+					}
+
+					break;
+				}
+			}
+		}
+
+		PickedUpItems.Add(CurrentItem);
+		CurrentItem = nullptr;
+		State = ESurvivorState::Wander;
+		return;
+	}
+
+	AIC->MoveToLocation(CurrentItem->GetActorLocation());
+}
+
+//========================
+// Inventory
+//========================
+void USurvivorMovement::TryUseInventory()
+{
+	if (!Inventory || !Health)
+		return;
+
+	const TArray<ABaseItem*>& Items = Inventory->GetInventory();
+
+	for (int32 i = 0; i < Items.Num(); ++i)
+	{
+		ABaseItem* Item = Items[i];
+		if (!Item)
+			continue;
+
+		if (Item->IsA(AMedkit::StaticClass()))
+		{
+			if (Health->GetHealth() <= Health->GetMaxHealth() * 0.5f)
+			{
+				Inventory->UseItem(i);
+				return;
+			}
+		}
+	}
 }

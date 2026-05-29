@@ -3,6 +3,7 @@
 #include "StudentPerceptor.h"
 #include "Components/CapsuleComponent.h"
 #include "Village/House/House.h"
+#include "Items/BaseItem.h"
 
 UStudentPerceptor::UStudentPerceptor()
 {
@@ -24,25 +25,25 @@ void UStudentPerceptor::BeginPlay()
 
 void UStudentPerceptor::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
 {
-	const FString SeenName = Actor ? Actor->GetName() : TEXT("NULL");
-	const FString Sensed = Stimulus.WasSuccessfullySensed() ? TEXT("YES") : TEXT("NO");
-
-	GEngine->AddOnScreenDebugMessage(
-		-1, 1.5f, FColor::Green,
-		FString::Printf(TEXT("Saw: %s | Sensed: %s"), *SeenName, *Sensed)
-	);
-
-	if (AHouse* House = Cast<AHouse>(Actor))
+	if (ABaseItem* Item = Cast<ABaseItem>(Actor))
 	{
-		GEngine->AddOnScreenDebugMessage(
-			-1, 1.5f, FColor::Yellow,
-			FString::Printf(TEXT("HOUSE DETECTED: %s"), *House->GetName())
-		);
-		
 		if (Stimulus.WasSuccessfullySensed())
 		{
-			if (Wanderer)
+			if (Wanderer && Wanderer->CanOverride(ESurvivorState::PickupItem))
+			{
+				Wanderer->StartPickingUpItem(Item);
+			}
+		}
+	}
+	
+	if (AHouse* House = Cast<AHouse>(Actor))
+	{
+		if (Stimulus.WasSuccessfullySensed())
+		{
+			if (Wanderer && Wanderer->CanOverride(ESurvivorState::ExploreHouse))
+			{
 				Wanderer->StartExploringHouse(House);
+			}
 		}
 	}
 }

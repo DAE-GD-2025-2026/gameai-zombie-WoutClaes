@@ -1,13 +1,15 @@
 #pragma once
+#include "Common/InventoryComponent.h"
 
 #include "SurvivorMovement.generated.h"
 
 UENUM()
 enum class ESurvivorState : uint8
 {
-	Wander,
-	ExploreHouse,
-	ExitHouse,
+	Wander = 0,
+	ExploreHouse = 1,
+	ExitHouse = 2,
+	PickupItem = 3,
 };
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
@@ -17,16 +19,26 @@ class CLAESWOUTZOMBIERUNTIME_API USurvivorMovement : public UActorComponent
 
 public:
 	USurvivorMovement();
+	
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
+	ESurvivorState GetState() const{ return State; }
+	
+	void StartExploringHouse(AActor* House);
+	
+	void StartPickingUpItem(ABaseItem* Item);
+
+	bool CanOverride(ESurvivorState NewState) const { return GetPriority(NewState) > GetPriority(State); }
+	
 protected:
 	virtual void BeginPlay() override;
 
-public:
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-
-	void StartExploringHouse(AActor* House);
-
 private:
+	//========================
+	// Helper
+	//========================
+	int32 GetPriority(ESurvivorState CheckState) const { return static_cast<int32>(CheckState); }
+	
 	//========================
 	// Wander
 	//========================
@@ -68,4 +80,26 @@ private:
 	float MaxExploreHouseTime = 3.f;
 	
 	void TickExitHouse(float DeltaTime);
+	
+	//========================
+	// Pickup Item
+	//========================
+	ABaseItem* CurrentItem = nullptr;
+	TSet<AActor*> PickedUpItems;
+	UInventoryComponent* Inventory = nullptr;
+	float PickupTimer = 0.f;
+	float MaxPickupTime = 3.f;
+
+	UPROPERTY(EditAnywhere)
+	float ItemPickupRadius = 120.f;
+	
+	void TickPickupItem(float DeltaTime);
+	bool ShouldPickUpItem(ABaseItem* Item);
+	
+	//========================
+	// Inventory
+	//========================
+	UHealthComponent* Health = nullptr;
+
+	void TryUseInventory();
 };
