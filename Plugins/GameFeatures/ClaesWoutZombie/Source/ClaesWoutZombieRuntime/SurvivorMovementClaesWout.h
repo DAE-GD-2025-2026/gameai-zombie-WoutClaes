@@ -36,6 +36,14 @@ protected:
 
 private:
 	//========================
+	// Radar Spin Meta
+	//========================
+	float SpinAngle = 0.f;
+
+	UPROPERTY(EditAnywhere, Category = "Wander")
+	float SpinSpeed = 360.f;
+	
+	//========================
 	// Cached Components
 	//========================
 	UPROPERTY()
@@ -120,6 +128,10 @@ private:
 	//========================
 	UHealthComponent* Health = nullptr;
 	UStaminaComponent* Stamina = nullptr;
+	float ItemCooldownTimer = 0.f;
+	
+	UPROPERTY(EditAnywhere, Category = "Inventory")
+	float ItemUseCooldownDuration = 2.0f;
 
-	void TryUseInventory();
+	void TryUseInventory(float DeltaTime);
 };

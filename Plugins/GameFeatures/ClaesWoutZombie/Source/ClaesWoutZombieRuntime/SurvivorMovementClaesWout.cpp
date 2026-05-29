@@ -30,7 +30,7 @@ void USurvivorMovementClaesWout::TickComponent(float DeltaTime, ELevelTick TickT
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	
-	TryUseInventory();
+	TryUseInventory(DeltaTime);
 
 	switch (State)
 	{
@@ -60,12 +60,17 @@ void USurvivorMovementClaesWout::TickComponent(float DeltaTime, ELevelTick TickT
 //========================
 void USurvivorMovementClaesWout::TickWander(float DeltaTime)
 {
-	if (!MyPawn)
+	if (!MyPawn || !MyAIController)
 		return;
 
-	if (!MyAIController) 
-		return;
-
+	SpinAngle += SpinSpeed * DeltaTime;
+	if (SpinAngle > 360.f) SpinAngle -= 360.f;
+	
+	FVector SpinDirection = FRotator(0.f, SpinAngle, 0.f).Vector();
+	FVector FocalPoint = MyPawn->GetActorLocation() + (SpinDirection * 1000.f);
+	
+	MyAIController->SetFocalPoint(FocalPoint);
+	
 	if (MyAIController->GetMoveStatus() == EPathFollowingStatus::Idle)
 	{
 		PickNewWanderTarget();
@@ -133,10 +138,7 @@ void USurvivorMovementClaesWout::TickExploreHouse(float DeltaTime)
 
 void USurvivorMovementClaesWout::StartExploringHouse(AActor* House)
 {
-	if (!House)
-		return;
-	
-	if (VisitedHouses.Contains(House))
+	if (!House || VisitedHouses.Contains(House))
 		return;
 	
 	VisitedHouses.Add(House);
@@ -147,15 +149,15 @@ void USurvivorMovementClaesWout::StartExploringHouse(AActor* House)
 	EntranceLocation = GetOwner()->GetActorLocation();
 	HouseExitLocation = EntranceLocation;
 	
+	if (MyAIController) MyAIController->ClearFocus(EAIFocusPriority::Gameplay);
+	
 	MoveToHouseCenter();
 }
 
 void USurvivorMovementClaesWout::MoveToHouseCenter()
 {
-	if (!MyPawn)
+	if (!MyPawn || !MyAIController)
 		return;
-
-	if (!MyAIController) return;
 
 	FVector HouseCenter;
 	FVector Extents;
@@ -210,6 +212,7 @@ void USurvivorMovementClaesWout::StartPickingUpItem(ABaseItem* Item)
 
 	if (MyAIController)
 	{
+		MyAIController->ClearFocus(EAIFocusPriority::Gameplay);
 		MyAIController->MoveToActor(Item);
 	}
 }
@@ -306,10 +309,16 @@ void USurvivorMovementClaesWout::TickPickupItem(float DeltaTime)
 //========================
 // Inventory
 //========================
-void USurvivorMovementClaesWout::TryUseInventory()
+void USurvivorMovementClaesWout::TryUseInventory(float DeltaTime)
 {
-	if (!Inventory)
-		return;
+	if (!Inventory) return;
+
+	// Process Cooldown
+	if (ItemCooldownTimer > 0.f)
+	{
+		ItemCooldownTimer -= DeltaTime;
+		return; // Still on cooldown, don't use anything
+	}
 
 	const TArray<ABaseItem*>& Items = Inventory->GetInventory();
 
@@ -319,28 +328,33 @@ void USurvivorMovementClaesWout::TryUseInventory()
 		if (!Item || Item->GetValue() <= 0) 
 			continue;
 
+		bool bUsedItem = false;
+
 		if (Health && Item->IsA(AMedkit::StaticClass()))
 		{
 			if (Health->GetHealth() <= Health->GetMaxHealth() * 0.5f)
 			{
-				if (Inventory->UseItem(i))
-				{
-					Inventory->RemoveItem(i);
-					return;
-				}
+				bUsedItem = Inventory->UseItem(i);
 			}
 		}
 		
-		if (Stamina && Item->IsA(AFood::StaticClass()))
+		else if (Stamina && Item->IsA(AFood::StaticClass()))
 		{
 			if (Stamina->GetCurrentStamina() <= Stamina->GetMaxStamina() * 0.3f)
 			{
-				if (Inventory->UseItem(i))
-				{
-					Inventory->RemoveItem(i);
-					return;
-				}
+				bUsedItem = Inventory->UseItem(i);
 			}
+		}
+
+		if (bUsedItem)
+		{
+			ItemCooldownTimer = ItemUseCooldownDuration;
+
+			if (Item->GetValue() <= 0)
+			{
+				Inventory->RemoveItem(i);
+			}
+			return;
 		}
 	}
 }
