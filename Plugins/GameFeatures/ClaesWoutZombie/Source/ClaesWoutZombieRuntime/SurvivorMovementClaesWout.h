@@ -9,8 +9,8 @@ enum class ESurvivorState : uint8
 	ExploreHouse = 1,
 	ExitHouse = 2,
 	PickupItem = 3,
-	Flee = 4,
-	Combat = 5,
+	Combat = 4,
+	Flee = 5,
 };
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
@@ -28,7 +28,7 @@ public:
 	void StartExploringHouse(AActor* House);
 	void StartPickingUpItem(ABaseItem* Item);
 
-	bool CanOverride(ESurvivorState NewState) const { return GetPriority(NewState) > GetPriority(State); }
+	bool CanOverride(ESurvivorState NewState) const;
 	bool ShouldPickUpItem(ABaseItem* Item);
 	
 	void HandleZombieSpotted(AActor* Zombie);
@@ -44,7 +44,7 @@ private:
 	float SpinAngle = 0.f;
 
 	UPROPERTY(EditAnywhere, Category = "Wander")
-	float SpinSpeed = 360.f;
+	float SpinSpeed = 180.f;
 	
 	//========================
 	// Cached Components
@@ -70,6 +70,15 @@ private:
 	//========================
 	// Wander
 	//========================
+	FVector WanderHeading = FVector::ZeroVector;
+	float WanderHeadingTimer = 0.f;
+	
+	UPROPERTY(EditAnywhere, Category = "Wander")
+	float WanderHeadingChangeDuration = 6.f;
+	
+	UPROPERTY(EditAnywhere, Category = "Wander")
+	float WanderHeadingVariance = 30.f;
+	
 	UPROPERTY(EditAnywhere, Category = "Wander")
 	float WanderForwardDistance = 800.f;
 
@@ -77,7 +86,7 @@ private:
 	float WanderForwardRadius = 400.f;
 	
 	void TickWander(float DeltaTime);
-	void PickNewWanderTarget();
+	void PickNewWanderTarget(bool bPickNewHeading);
 	
 	//========================
 	// House Exploring
@@ -109,7 +118,7 @@ private:
 	float MaxExitHouseTime = 3.f;
 	
 	UPROPERTY(EditAnywhere)
-	float MaxExploreHouseTime = 3.f;
+	float MaxExploreHouseTime = 5.f;
 	
 	void TickExitHouse(float DeltaTime);
 	
@@ -159,6 +168,15 @@ private:
 	
 	UPROPERTY(EditAnywhere, Category = "Flee")
 	float ZombieMemoryDuration = 4.0f;
+	
+	UPROPERTY(EditAnywhere, Category = "Combat")
+	float CombatEngageRange = 800.f;
+	
+	UPROPERTY(EditAnywhere, Category = "Combat")
+	float PanicRadius = 400.f;
+	
+	UPROPERTY(EditAnywhere, Category = "Flee")
+	int FleeReengageHealthThreshold = 3;
 	
 	void TickFlee(float DeltaTime);
 	void TickCombat(float DeltaTime);
