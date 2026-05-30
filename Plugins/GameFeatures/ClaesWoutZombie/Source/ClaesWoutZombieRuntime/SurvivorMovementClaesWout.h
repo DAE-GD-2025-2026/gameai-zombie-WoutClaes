@@ -34,6 +34,8 @@ public:
 	void HandleZombieSpotted(AActor* Zombie);
 	void HandleZombieLost(AActor* Zombie);
 	
+	bool HasWeapon() const;
+	
 protected:
 	virtual void BeginPlay() override;
 
@@ -156,6 +158,7 @@ private:
 	bool bIsZombieVisible = false;
 	float TimeSinceZombieSeen = 0.f;
 	FVector FleeDestination = FVector::ZeroVector;
+	bool bEnteredHouseWhileFleeing = false;
 	
 	UPROPERTY()
 	AActor* TargetZombie = nullptr;
@@ -181,6 +184,5 @@ private:
 	void TickFlee(float DeltaTime);
 	void TickCombat(float DeltaTime);
 
-	bool HasWeapon() const;
 	int32 GetWeaponSlot() const;
 };

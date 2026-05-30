@@ -157,6 +157,11 @@ void USurvivorMovementClaesWout::StartExploringHouse(AActor* House)
 	
 	VisitedHouses.Add(House);
 	CurrentHouse = House;
+	
+	if (State == ESurvivorState::Flee)
+		PreviousState = ESurvivorState::Flee;
+	bEnteredHouseWhileFleeing = (State == ESurvivorState::Flee);
+	
 	State = ESurvivorState::ExploreHouse;
 	ExploreHouseTimer = 0.f;
 	
@@ -189,7 +194,9 @@ void USurvivorMovementClaesWout::TickExitHouse(float DeltaTime)
 
 	if (ExitHouseTimer >= MaxExitHouseTime)
 	{
-		State = ESurvivorState::Wander;
+		State = (PreviousState == ESurvivorState::Flee && IsValid(TargetZombie)) 
+		? ESurvivorState::Flee 
+		: ESurvivorState::Wander;
 		CurrentHouse = nullptr;
 		return;
 	}
@@ -200,7 +207,9 @@ void USurvivorMovementClaesWout::TickExitHouse(float DeltaTime)
 	float DistSq = FVector::DistSquared(MyPawn->GetActorLocation(), HouseExitLocation);
 	if (DistSq <= 150.f * 150.f)
 	{
-		State = ESurvivorState::Wander;
+		State = (PreviousState == ESurvivorState::Flee && IsValid(TargetZombie)) 
+		? ESurvivorState::Flee 
+		: ESurvivorState::Wander;
 		CurrentHouse = nullptr;
 	}
 }
@@ -235,8 +244,14 @@ bool USurvivorMovementClaesWout::CanOverride(ESurvivorState NewState) const
 {
 	if (State == ESurvivorState::Combat && NewState == ESurvivorState::Flee)
 		return true;
-	
+
 	if (State == ESurvivorState::Flee && NewState == ESurvivorState::Combat)
+		return true;
+
+	if (State == ESurvivorState::Flee && NewState == ESurvivorState::PickupItem && !HasWeapon())
+		return true;
+
+	if (State == ESurvivorState::Flee && NewState == ESurvivorState::ExploreHouse && !HasWeapon())
 		return true;
 
 	if (NewState == ESurvivorState::Flee || NewState == ESurvivorState::Combat)
@@ -309,12 +324,6 @@ void USurvivorMovementClaesWout::TickPickupItem(float DeltaTime)
 		State = PreviousState;
 		return;
 	}
-
-	GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Yellow,
-	FString::Printf(TEXT("Dist: %.1f / PickupRadius: %.1f"),
-	FVector::Dist(MyPawn->GetActorLocation(), CurrentItem->GetActorLocation()),
-	ItemPickupRadius));
-
 	
 	float DistSq = FVector::DistSquared(MyPawn->GetActorLocation(), CurrentItem->GetActorLocation());
 	if (DistSq <= ItemPickupRadius * ItemPickupRadius)
@@ -332,13 +341,10 @@ void USurvivorMovementClaesWout::TickPickupItem(float DeltaTime)
 					{
 						PickedUpItems.Add(CurrentItem);
 						
-						GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Green,
-							FString::Printf(TEXT("Picked up item: %s"), *CurrentItem->GetName()));
-					}
-					else
-					{
-						GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Red,
-							TEXT("GrabItem failed"));
+						if (PreviousState == ESurvivorState::Flee && CurrentItem->IsA(AWeapon::StaticClass()))
+						{
+							FleeTimer = FMath::Max(FleeTimer, 2.0f);
+						}
 					}
 					break;
 				}

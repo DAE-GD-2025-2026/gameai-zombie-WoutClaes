@@ -4,6 +4,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Village/House/House.h"
 #include "Items/BaseItem.h"
+#include "Items/Weapon.h"
 #include "Zombies/BaseZombie.h"
 
 UStudentPerceptorClaesWout::UStudentPerceptorClaesWout()
@@ -30,7 +31,15 @@ void UStudentPerceptorClaesWout::OnPerceptionUpdated(AActor* Actor, FAIStimulus 
 	{
 		if (Stimulus.WasSuccessfullySensed())
 		{
-			if (Wanderer && Wanderer->CanOverride(ESurvivorState::PickupItem) && Wanderer->ShouldPickUpItem(Item))
+			bool bDesperate = Wanderer && !Wanderer->HasWeapon()
+							  && Wanderer->GetState() == ESurvivorState::Flee
+							  && Item->IsA(AWeapon::StaticClass());
+
+			if (bDesperate && Wanderer->CanOverride(ESurvivorState::PickupItem))
+			{
+				Wanderer->StartPickingUpItem(Item);
+			}
+			else if (Wanderer && Wanderer->CanOverride(ESurvivorState::PickupItem) && Wanderer->ShouldPickUpItem(Item))
 			{
 				Wanderer->StartPickingUpItem(Item);
 			}
