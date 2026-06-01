@@ -50,4 +50,13 @@ void USelfPreservationServiceClaesWout::TickNode(UBehaviorTreeComponent& OwnerCo
 			}
 		}
 	}
+	
+	for (int32 i = 0; i < Inv->GetInventoryCapacity(); ++i)
+	{
+		ABaseItem* Item = Inv->GetInventory()[i];
+		if (Item && Item->GetValue() <= 0)
+		{
+			Inv->RemoveItem(i);
+		}
+	}
 }

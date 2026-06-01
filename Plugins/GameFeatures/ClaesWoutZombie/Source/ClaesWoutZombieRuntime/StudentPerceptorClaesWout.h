@@ -36,12 +36,10 @@ protected:
 	
 	UBlackboardComponent* GetBlackboard() const;
 
-	// Independent target references
 	const FName BBK_TargetZombie = FName("TargetZombie");
 	const FName BBK_TargetItem = FName("TargetItem");
 	const FName BBK_TargetHouse = FName("TargetHouse");
 
-	// Control & Evaluation flags
 	const FName BBK_IsZombieVisible = FName("IsZombieVisible");
 	const FName BBK_ShouldFight = FName("ShouldFight");
 	const FName BBK_ShouldFlee = FName("ShouldFlee");

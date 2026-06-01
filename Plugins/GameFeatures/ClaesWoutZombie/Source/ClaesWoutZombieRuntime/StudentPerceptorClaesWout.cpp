@@ -1,5 +1,4 @@
 ﻿#include "StudentPerceptorClaesWout.h"
-
 #include "AIController.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Common/InventoryComponent.h"
@@ -76,7 +75,6 @@ void UStudentPerceptorClaesWout::DropBreadcrumb()
 	{
 		Breadcrumbs.Add(OwnerPawn->GetActorLocation());
 		
-		// Optional: Keep the array from growing infinitely (e.g., max 20 points)
 		if (Breadcrumbs.Num() > 20)
 		{
 			Breadcrumbs.RemoveAt(0);
@@ -115,7 +113,6 @@ bool UStudentPerceptorClaesWout::ShouldPickUpItem(ABaseItem* Item) const
 
 	if (EmptySlots == 0) return false;
 
-	// Limit our inventory so we don't hoard one type of item
 	if (Item->IsA(APistol::StaticClass()) && PistolCount >= 1) return false;
 	if (Item->IsA(AShotgun::StaticClass()) && ShotgunCount >= 1) return false;
 	if (Item->IsA(AFood::StaticClass()) && FoodCount >= 2) return false;
@@ -129,10 +126,8 @@ void UStudentPerceptorClaesWout::OnPerceptionUpdated(AActor* Actor, FAIStimulus 
 	UBlackboardComponent* Blackboard = GetBlackboard();
 	if (!Blackboard) return;
 
-	// 1. Dedicated Item Track
 	if (ABaseItem* Item = Cast<ABaseItem>(Actor))
 	{
-		// Only desire the item if our inventory rules allow it
 		if (Stimulus.WasSuccessfullySensed() && ShouldPickUpItem(Item)) 
 		{
 			Blackboard->SetValueAsObject(BBK_TargetItem, Item);
@@ -140,10 +135,8 @@ void UStudentPerceptorClaesWout::OnPerceptionUpdated(AActor* Actor, FAIStimulus 
 		}
 	}
 	
-	// 2. Dedicated House Track
 	if (AHouse* House = Cast<AHouse>(Actor))
 	{
-		// Only desire the house if we haven't visited it yet
 		if (Stimulus.WasSuccessfullySensed() && !VisitedHouses.Contains(House)) 
 		{
 			Blackboard->SetValueAsObject(BBK_TargetHouse, House);
@@ -151,7 +144,6 @@ void UStudentPerceptorClaesWout::OnPerceptionUpdated(AActor* Actor, FAIStimulus 
 		}
 	}
 	
-	// 3. Dedicated Zombie Handling
 	if (Actor && Actor != GetOwner() && Actor->IsA(ABaseZombie::StaticClass()))
 	{
 		if (Stimulus.WasSuccessfullySensed())
@@ -186,7 +178,6 @@ void UStudentPerceptorClaesWout::OnPerceptionUpdated(AActor* Actor, FAIStimulus 
 		}
 		else
 		{
-			// Lose visual confirmation, but let the Tasks handle threat retention!
 			Blackboard->SetValueAsBool(BBK_IsZombieVisible, false);
 		}
 	}

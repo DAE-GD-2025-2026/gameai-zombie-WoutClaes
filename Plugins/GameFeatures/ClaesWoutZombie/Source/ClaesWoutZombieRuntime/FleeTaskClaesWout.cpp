@@ -48,7 +48,7 @@ void UFleeTaskClaesWout::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 	{
 		BB->SetValueAsObject(TargetActorKey.SelectedKeyName, nullptr);
 		BB->SetValueAsBool(FName("IsZombieVisible"), false);
-		BB->SetValueAsBool(FName("ShouldFlee"), false); // Escape Flee State
+		BB->SetValueAsBool(FName("ShouldFlee"), false);
 		FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
 		return;
 	}
@@ -62,7 +62,7 @@ void UFleeTaskClaesWout::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 		bool bHasWeapon = false;
 		if (Inventory)
 		{
-			for (ABaseItem* Item : Inventory->GetInventory()) // Or Inventory->GetInventory() matching your class layout
+			for (ABaseItem* Item : Inventory->GetInventory())
 			{
 				if (Item && Item->IsA(AWeapon::StaticClass()) && Item->GetValue() > 0)
 				{
@@ -76,13 +76,12 @@ void UFleeTaskClaesWout::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 		if (bHasWeapon && CurrentHealth > FleeReengageHealthThreshold)
 		{
 			BB->SetValueAsBool(FName("ShouldFight"), true);
-			BB->SetValueAsBool(FName("ShouldFlee"), false); // Transition to Fight
+			BB->SetValueAsBool(FName("ShouldFlee"), false);
 			FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
 			return;
 		}
 	}
 
-	// Pick a new flee destination if idle or no destination yet
 	if (AICon->GetMoveStatus() == EPathFollowingStatus::Idle || Memory->FleeDestination.IsZero())
 	{
 		FVector ZombieLoc = IsValid(TargetZombie)
@@ -100,7 +99,6 @@ void UFleeTaskClaesWout::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 			FNavLocation NavLoc;
 			bool bFoundValidPath = false;
 
-			// Try straight back
 			FVector TargetPoint = MyLoc + (FleeDirection * 2500.f);
 			if (NavSys->ProjectPointToNavigation(TargetPoint, NavLoc, FVector(300.f, 300.f, 300.f)))
 			{
@@ -108,7 +106,6 @@ void UFleeTaskClaesWout::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 				bFoundValidPath = true;
 			}
 
-			// Try left diagonal
 			if (!bFoundValidPath)
 			{
 				FVector LeftDir = FleeDirection.RotateAngleAxis(45.f, FVector::UpVector);
@@ -120,7 +117,6 @@ void UFleeTaskClaesWout::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 				}
 			}
 
-			// Try right diagonal
 			if (!bFoundValidPath)
 			{
 				FVector RightDir = FleeDirection.RotateAngleAxis(-45.f, FVector::UpVector);
@@ -132,7 +128,6 @@ void UFleeTaskClaesWout::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* Node
 				}
 			}
 
-			// Fallback: short distance with larger tolerance
 			if (!bFoundValidPath)
 			{
 				TargetPoint = MyLoc + (FleeDirection * 600.f);
