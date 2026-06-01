@@ -1,20 +1,37 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+﻿#include "StudentPerceptorClaesWout.h"
 
-#include "StudentPerceptorClaesWout.h"
+#include "AIController.h"
+#include "BehaviorTree/BlackboardComponent.h"
+#include "Common/InventoryComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Village/House/House.h"
 #include "Items/BaseItem.h"
+#include "Items/Food.h"
+#include "Items/Medkit.h"
+#include "Items/Pistol.h"
+#include "Items/Shotgun.h"
 #include "Items/Weapon.h"
 #include "Zombies/BaseZombie.h"
 
 UStudentPerceptorClaesWout::UStudentPerceptorClaesWout()
 {
-	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bCanEverTick = false;
 }
 
 void UStudentPerceptorClaesWout::BeginPlay()
 {
 	Super::BeginPlay();
+	
+	if (GetWorld())
+	{
+		GetWorld()->GetTimerManager().SetTimer(
+			BreadcrumbTimerHandle, 
+			this, 
+			&UStudentPerceptorClaesWout::DropBreadcrumb, 
+			3.0f, 
+			true
+		);
+	}
 	
 	if (auto PerceptionComp = GetOwner()->GetComponentByClass<UAIPerceptionComponent>())
 	{
@@ -22,50 +39,155 @@ void UStudentPerceptorClaesWout::BeginPlay()
 	}
 	
 	SetupNavCollision();
-	SetupBehaviourComponents();
+	
+	if (BehaviorTreeAsset)
+	{
+		APawn* OwnerPawn = Cast<APawn>(GetOwner());
+		if (OwnerPawn)
+		{
+			AAIController* AICon = Cast<AAIController>(OwnerPawn->GetController());
+			if (AICon)
+			{
+				AICon->RunBehaviorTree(BehaviorTreeAsset);
+			}
+		}
+	}
+}
+
+UBlackboardComponent* UStudentPerceptorClaesWout::GetBlackboard() const
+{
+	APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (!OwnerPawn) return nullptr;
+
+	AAIController* AICon = Cast<AAIController>(OwnerPawn->GetController());
+	if (!AICon) return nullptr;
+
+	return AICon->GetBlackboardComponent();
+}
+
+void UStudentPerceptorClaesWout::AddVisitedHouse(AActor* House)
+{
+	if (House) VisitedHouses.Add(House);
+}
+
+void UStudentPerceptorClaesWout::DropBreadcrumb()
+{
+	if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+	{
+		Breadcrumbs.Add(OwnerPawn->GetActorLocation());
+		
+		// Optional: Keep the array from growing infinitely (e.g., max 20 points)
+		if (Breadcrumbs.Num() > 20)
+		{
+			Breadcrumbs.RemoveAt(0);
+		}
+	}
+}
+
+bool UStudentPerceptorClaesWout::ShouldPickUpItem(ABaseItem* Item) const
+{
+	if (!Item || Item->GetValue() <= 0) return false;
+
+	APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (!OwnerPawn) return false;
+
+	UInventoryComponent* Inventory = OwnerPawn->FindComponentByClass<UInventoryComponent>();
+	if (!Inventory) return false;
+
+	int PistolCount = 0, ShotgunCount = 0, FoodCount = 0, MedkitCount = 0, EmptySlots = 0;
+
+	for (ABaseItem* InvItem : Inventory->GetInventory())
+	{
+		if (!InvItem)
+		{
+			EmptySlots++;
+			continue;
+		}
+		if (InvItem->GetValue() > 0)
+		{
+			if (InvItem->IsA(APistol::StaticClass())) PistolCount++;
+			else if (InvItem->IsA(AShotgun::StaticClass())) ShotgunCount++;
+			else if (InvItem->IsA(AFood::StaticClass())) FoodCount++;
+			else if (InvItem->IsA(AMedkit::StaticClass())) MedkitCount++;
+		}
+		else { EmptySlots++; }
+	}
+
+	if (EmptySlots == 0) return false;
+
+	// Limit our inventory so we don't hoard one type of item
+	if (Item->IsA(APistol::StaticClass()) && PistolCount >= 1) return false;
+	if (Item->IsA(AShotgun::StaticClass()) && ShotgunCount >= 1) return false;
+	if (Item->IsA(AFood::StaticClass()) && FoodCount >= 2) return false;
+	if (Item->IsA(AMedkit::StaticClass()) && MedkitCount >= 2) return false;
+
+	return true;
 }
 
 void UStudentPerceptorClaesWout::OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
 {
+	UBlackboardComponent* Blackboard = GetBlackboard();
+	if (!Blackboard) return;
+
+	// 1. Dedicated Item Track
 	if (ABaseItem* Item = Cast<ABaseItem>(Actor))
 	{
-		if (Stimulus.WasSuccessfullySensed())
+		// Only desire the item if our inventory rules allow it
+		if (Stimulus.WasSuccessfullySensed() && ShouldPickUpItem(Item)) 
 		{
-			bool bDesperate = Wanderer && !Wanderer->HasWeapon()
-							  && Wanderer->GetState() == ESurvivorState::Flee
-							  && Item->IsA(AWeapon::StaticClass());
-
-			if (bDesperate && Wanderer->CanOverride(ESurvivorState::PickupItem))
-			{
-				Wanderer->StartPickingUpItem(Item);
-			}
-			else if (Wanderer && Wanderer->CanOverride(ESurvivorState::PickupItem) && Wanderer->ShouldPickUpItem(Item))
-			{
-				Wanderer->StartPickingUpItem(Item);
-			}
+			Blackboard->SetValueAsObject(BBK_TargetItem, Item);
+			Blackboard->SetValueAsBool(BBK_DesireItem, true);
 		}
 	}
 	
+	// 2. Dedicated House Track
 	if (AHouse* House = Cast<AHouse>(Actor))
 	{
-		if (Stimulus.WasSuccessfullySensed())
+		// Only desire the house if we haven't visited it yet
+		if (Stimulus.WasSuccessfullySensed() && !VisitedHouses.Contains(House)) 
 		{
-			if (Wanderer && Wanderer->CanOverride(ESurvivorState::ExploreHouse))
-			{
-				Wanderer->StartExploringHouse(House);
-			}
+			Blackboard->SetValueAsObject(BBK_TargetHouse, House);
+			Blackboard->SetValueAsBool(BBK_DesireHouse, true);
 		}
 	}
 	
+	// 3. Dedicated Zombie Handling
 	if (Actor && Actor != GetOwner() && Actor->IsA(ABaseZombie::StaticClass()))
 	{
 		if (Stimulus.WasSuccessfullySensed())
 		{
-			if (Wanderer) Wanderer->HandleZombieSpotted(Actor);
+			Blackboard->SetValueAsObject(BBK_TargetZombie, Actor);
+			Blackboard->SetValueAsBool(BBK_IsZombieVisible, true);
+
+			APawn* OwnerPawn = Cast<APawn>(GetOwner());
+			bool bHasWeapon = false;
+			float CurrentHealth = 0.f;
+
+			if (OwnerPawn)
+			{
+				if (UInventoryComponent* Inv = OwnerPawn->FindComponentByClass<UInventoryComponent>())
+				{
+					for (ABaseItem* Item : Inv->GetInventory())
+					{
+						if (Item && Item->IsA(AWeapon::StaticClass()) && Item->GetValue() > 0)
+						{
+							bHasWeapon = true;
+							break;
+						}
+					}
+				}
+				if (UHealthComponent* HP = OwnerPawn->FindComponentByClass<UHealthComponent>())
+					CurrentHealth = HP->GetHealth();
+			}
+
+			bool bFightDecision = bHasWeapon && CurrentHealth > 3;
+			Blackboard->SetValueAsBool(BBK_ShouldFight, bFightDecision);
+			Blackboard->SetValueAsBool(BBK_ShouldFlee, !bFightDecision);
 		}
 		else
 		{
-			if (Wanderer) Wanderer->HandleZombieLost(Actor);
+			// Lose visual confirmation, but let the Tasks handle threat retention!
+			Blackboard->SetValueAsBool(BBK_IsZombieVisible, false);
 		}
 	}
 }
@@ -73,25 +195,13 @@ void UStudentPerceptorClaesWout::OnPerceptionUpdated(AActor* Actor, FAIStimulus 
 void UStudentPerceptorClaesWout::SetupNavCollision()
 {
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (!OwnerPawn)
-		return;
+	if (!OwnerPawn) return;
 
-	if (OwnerPawn->GetComponentByClass<UCapsuleComponent>())
-		return;
+	if (OwnerPawn->GetComponentByClass<UCapsuleComponent>()) return;
 
 	UCapsuleComponent* Capsule = NewObject<UCapsuleComponent>(OwnerPawn, TEXT("NavCapsule"));
 	Capsule->InitCapsuleSize(34.f, 88.f);
 	Capsule->SetCollisionProfileName(TEXT("Pawn"));
 	Capsule->RegisterComponent();
 	OwnerPawn->SetRootComponent(Capsule);
-}
-
-void UStudentPerceptorClaesWout::SetupBehaviourComponents()
-{
-	APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (!OwnerPawn)
-		return;
-
-	Wanderer = NewObject<USurvivorMovementClaesWout>(OwnerPawn, TEXT("SurvivorWanderer"));
-	Wanderer->RegisterComponent();
 }
