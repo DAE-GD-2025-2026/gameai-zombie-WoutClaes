@@ -49,7 +49,6 @@ void UCombatTaskClaesWout::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* No
 	bool bIsZombieVisible = BB->GetValueAsBool(FName("IsZombieVisible"));
 	AActor* TargetZombie = Cast<AActor>(BB->GetValueAsObject(TargetActorKey.SelectedKeyName));
 
-	// Lost sight — use memory duration before giving up
 	if (!bIsZombieVisible)
 	{
 		Memory->TimeSinceZombieSeen += DeltaSeconds;
@@ -61,7 +60,6 @@ void UCombatTaskClaesWout::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* No
 		}
 	}
 
-	// Target gone
 	if (!IsValid(TargetZombie))
 	{
 		AICon->ClearFocus(EAIFocusPriority::Gameplay);
@@ -69,7 +67,6 @@ void UCombatTaskClaesWout::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* No
 		return;
 	}
 
-	// No weapon — switch to flee
 	UInventoryComponent* Inventory = Pawn->FindComponentByClass<UInventoryComponent>();
 	int32 WeaponSlot = -1;
 	if (Inventory)
@@ -95,7 +92,6 @@ void UCombatTaskClaesWout::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* No
 
 	float DistToZombie = FVector::Dist(Pawn->GetActorLocation(), TargetZombie->GetActorLocation());
 
-	// Close in if out of range
 	if (DistToZombie > CombatEngageRange)
 	{
 		if (AICon->GetMoveStatus() == EPathFollowingStatus::Idle)
@@ -103,7 +99,6 @@ void UCombatTaskClaesWout::TickTask(UBehaviorTreeComponent& OwnerComp, uint8* No
 		return;
 	}
 
-	// In range — stop and shoot
 	if (AICon->GetMoveStatus() != EPathFollowingStatus::Idle)
 		AICon->StopMovement();
 

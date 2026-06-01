@@ -26,7 +26,6 @@ EBTNodeResult::Type UExploreHouseTaskClaesWout::ExecuteTask(UBehaviorTreeCompone
 	Memory->ExploreTimer = 0.f;
 	Memory->EntranceLocation = AICon->GetPawn()->GetActorLocation();
 
-	// Move to house center
 	FVector HouseCenter, Extents;
 	House->GetActorBounds(true, HouseCenter, Extents);
 	AICon->ClearFocus(EAIFocusPriority::Gameplay);
@@ -72,6 +71,11 @@ void UExploreHouseTaskClaesWout::TickTask(UBehaviorTreeComponent& OwnerComp, uin
 	if (DistSq <= HouseAcceptanceRadius * HouseAcceptanceRadius)
 	{
 		if (BB) BB->SetValueAsVector(FName("HouseExitLocation"), Memory->EntranceLocation);
+	
+		if (UStudentPerceptorClaesWout* Perceptor = AICon->GetPawn()->FindComponentByClass<UStudentPerceptorClaesWout>())
+		{
+			Perceptor->AddVisitedHouse(House);
+		}
 		FinishLatentTask(OwnerComp, EBTNodeResult::Succeeded);
 	}
 }
