@@ -14,7 +14,7 @@
 
 UStudentPerceptorClaesWout::UStudentPerceptorClaesWout()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bCanEverTick = true;
 }
 
 void UStudentPerceptorClaesWout::BeginPlay()
@@ -50,6 +50,41 @@ void UStudentPerceptorClaesWout::BeginPlay()
 				AICon->RunBehaviorTree(BehaviorTreeAsset);
 			}
 		}
+	}
+}
+
+void UStudentPerceptorClaesWout::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (!OwnerPawn) return;
+
+	if (UHealthComponent* HP = OwnerPawn->FindComponentByClass<UHealthComponent>())
+	{
+		float CurrentHealth = HP->GetHealth();
+
+		// Initialize the health on the first tick so we don't trigger damage instantly
+		if (!bHasInitializedHealth)
+		{
+			PreviousHealth = CurrentHealth;
+			bHasInitializedHealth = true;
+			return;
+		}
+
+		if (CurrentHealth < PreviousHealth)
+		{
+			FRotator NewRotation = OwnerPawn->GetActorRotation();
+			NewRotation.Yaw += 180.0f;
+			OwnerPawn->SetActorRotation(NewRotation);
+
+			if (AAIController* AICon = Cast<AAIController>(OwnerPawn->GetController()))
+			{
+				AICon->StopMovement();
+			}
+		}
+
+		PreviousHealth = CurrentHealth;
 	}
 }
 

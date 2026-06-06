@@ -20,6 +20,8 @@ public:
 	UStudentPerceptorClaesWout();
 	
 	virtual void BeginPlay() override;
+	
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	UFUNCTION()
 	virtual void OnPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus);
@@ -51,4 +53,7 @@ protected:
 	FTimerHandle BreadcrumbTimerHandle;
 	
 	bool ShouldPickUpItem(class ABaseItem* Item) const;
+	
+	float PreviousHealth = 0.0f;
+	bool bHasInitializedHealth = false;
 };
