@@ -128,23 +128,28 @@ bool UStudentPerceptorClaesWout::ShouldPickUpItem(ABaseItem* Item) const
 	if (!Inventory) return false;
 
 	int PistolCount = 0, ShotgunCount = 0, FoodCount = 0, MedkitCount = 0, EmptySlots = 0;
+	bool bHasWorseItemOfSameType = false;
 
 	for (ABaseItem* InvItem : Inventory->GetInventory())
 	{
-		if (!InvItem)
+		if (!InvItem || InvItem->GetValue() <= 0)
 		{
 			EmptySlots++;
 			continue;
 		}
-		if (InvItem->GetValue() > 0)
+
+		if (InvItem->GetClass() == Item->GetClass() && InvItem->GetValue() < Item->GetValue())
 		{
-			if (InvItem->IsA(APistol::StaticClass())) PistolCount++;
-			else if (InvItem->IsA(AShotgun::StaticClass())) ShotgunCount++;
-			else if (InvItem->IsA(AFood::StaticClass())) FoodCount++;
-			else if (InvItem->IsA(AMedkit::StaticClass())) MedkitCount++;
+			bHasWorseItemOfSameType = true;
 		}
-		else { EmptySlots++; }
+
+		if (InvItem->IsA(APistol::StaticClass())) PistolCount++;
+		else if (InvItem->IsA(AShotgun::StaticClass())) ShotgunCount++;
+		else if (InvItem->IsA(AFood::StaticClass())) FoodCount++;
+		else if (InvItem->IsA(AMedkit::StaticClass())) MedkitCount++;
 	}
+
+	if (bHasWorseItemOfSameType) return true;
 
 	if (EmptySlots == 0) return false;
 

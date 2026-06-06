@@ -84,13 +84,41 @@ void UPickupItemTaskClaesWout::TickTask(UBehaviorTreeComponent& OwnerComp, uint8
 	if (DistSq <= EffectivePickupRadius * EffectivePickupRadius)
 	{
 		int32 Capacity = Inventory->GetInventoryCapacity();
+		int32 TargetSlot = -1;
+		bool bIsReplacing = false;
+
 		for (int32 Slot = 0; Slot < Capacity; ++Slot)
 		{
-			if (Inventory->GetInventory()[Slot] == nullptr)
+			ABaseItem* InvItem = Inventory->GetInventory()[Slot];
+			if (InvItem && InvItem->GetClass() == Item->GetClass() && InvItem->GetValue() < Item->GetValue())
 			{
-				Inventory->GrabItem(Slot, Item);
+				TargetSlot = Slot;
+				bIsReplacing = true;
 				break;
 			}
+		}
+
+		if (!bIsReplacing)
+		{
+			for (int32 Slot = 0; Slot < Capacity; ++Slot)
+			{
+				ABaseItem* InvItem = Inventory->GetInventory()[Slot];
+				if (InvItem == nullptr || InvItem->GetValue() <= 0)
+				{
+					TargetSlot = Slot;
+					break;
+				}
+			}
+		}
+
+		if (TargetSlot != -1)
+		{
+			if (bIsReplacing)
+			{
+				Inventory->RemoveItem(TargetSlot); 
+			}
+			
+			Inventory->GrabItem(TargetSlot, Item);
 		}
 
 		BB->SetValueAsObject(TargetActorKey.SelectedKeyName, nullptr);
